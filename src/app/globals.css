@@ -1,0 +1,139 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f7f7f4;
+  --foreground: #18181b;
+  --muted: #71717a;
+  --border: #e4e4e7;
+  --surface: #ffffff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+}
+
+body {
+  min-height: 100%;
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-noto-sans-lao), "Noto Sans Lao", Arial, sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+th,
+td {
+  border: 1px solid var(--border);
+  padding: 0.5rem;
+  vertical-align: top;
+}
+
+th {
+  background: #f4f4f5;
+  font-weight: 700;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.content-safe-bottom {
+  padding-bottom: 6rem;
+}
+
+@media (max-width: 1023px) {
+  .mobile-bottom-nav {
+    scrollbar-width: thin;
+    transition: opacity 150ms ease, transform 150ms ease;
+  }
+
+  .app-shell:has(input:focus) .mobile-bottom-nav,
+  .app-shell:has(select:focus) .mobile-bottom-nav,
+  .app-shell:has(textarea:focus) .mobile-bottom-nav {
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(100%);
+  }
+}
+
+@media (min-width: 1024px) {
+  .content-safe-bottom {
+    padding-bottom: 2rem;
+  }
+}
+
+@media print {
+  @page {
+    margin: 12mm;
+  }
+
+  html,
+  body {
+    background: #ffffff;
+    font-family: var(--font-noto-sans-lao), "Noto Sans Lao", Arial, sans-serif;
+  }
+
+  .app-shell {
+    display: block !important;
+    min-height: auto !important;
+  }
+
+  .app-shell > aside,
+  .mobile-bottom-nav {
+    display: none !important;
+  }
+
+  .content-safe-bottom {
+    padding: 0 !important;
+  }
+
+  .export-report {
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .export-report .overflow-x-auto {
+    overflow: visible !important;
+  }
+
+  .export-report table {
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  .export-report tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .barcode-sheet {
+    display: grid !important;
+    grid-template-columns: repeat(3, 50mm) !important;
+    align-content: start;
+    justify-content: start;
+  }
+
+  .barcode-label {
+    width: 50mm;
+    min-height: 30mm;
+    border: 1px solid #000000 !important;
+    box-shadow: none !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

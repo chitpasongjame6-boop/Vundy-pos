@@ -1,0 +1,174 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+enum OrderStatus {
+  PENDING_PACK
+  PACKED
+  SHIPPED
+  CANCELLED
+  RETURNED
+}
+
+enum PaymentStatus {
+  PAID
+  COD
+}
+
+enum SalePaymentMethod {
+  CASH
+  TRANSFER
+  OTHER
+}
+
+enum SaleStatus {
+  ACTIVE
+  CANCELLED
+  RETURNED
+}
+
+model Product {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  name          String
+  sku           String   @unique
+  category      String
+  costPrice     Int
+  sellPrice     Int
+  stock         Int
+  lowStockAlert Int      @default(5)
+  imageUrl      String?
+  isActive      Boolean  @default(true)
+  variants      ProductVariant[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("products")
+}
+
+model Order {
+  id              String      @id @default(auto()) @map("_id") @db.ObjectId
+  orderNo         String?
+  customerName    String
+  phone           String
+  province        String
+  city            String
+  shippingCompany String
+  pickupBranch    String?
+  paymentStatus   PaymentStatus @default(PAID)
+  status          OrderStatus @default(PENDING_PACK)
+  items           OrderItem[]
+  totalAmount     Int
+  totalCost       Int
+  profit          Int
+  note            String?
+  returnReason    String?
+  returnNote      String?
+  returnedAt      DateTime?
+  restockedAt     DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@map("orders")
+}
+
+model Category {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("categories")
+}
+
+model Sale {
+  id            String            @id @default(auto()) @map("_id") @db.ObjectId
+  saleNo        String?
+  cashierId     String?
+  cashierName   String?
+  memberId      String?
+  memberName    String?
+  memberPhone   String?
+  memberTierName String?
+  memberDiscount Int?
+  status        SaleStatus        @default(ACTIVE)
+  items         SaleItem[]
+  totalAmount   Int
+  totalCost     Int
+  profit        Int
+  discount      Int               @default(0)
+  netAmount     Int
+  paymentMethod SalePaymentMethod @default(CASH)
+  receivedAmount Int?
+  changeAmount   Int?
+  voidReason     String?
+  voidNote       String?
+  voidedAt       DateTime?
+  restockedAt    DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@map("sales")
+}
+
+model DailyClosing {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  closingNo      String?
+  date           String
+  cashAmount     Int
+  transferAmount Int
+  otherAmount    Int
+  totalAmount    Int
+  billCount      Int
+  profit         Int
+  countedCash    Int
+  cashDifference Int
+  note           String?
+  closedAt       DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("daily_closings")
+}
+
+type OrderItem {
+  productId   String
+  variantId   String?
+  name        String
+  variantName String?
+  category    String?
+  sku         String
+  quantity    Int
+  price       Int
+  cost        Int
+  imageUrl    String?
+}
+
+type ProductVariant {
+  id            String
+  name          String
+  sku           String
+  unit          String?
+  costPrice     Int
+  sellPrice     Int
+  stock         Int
+  lowStockAlert Int
+}
+
+type SaleItem {
+  productId   String
+  variantId   String?
+  name        String
+  variantName String?
+  category    String?
+  sku         String
+  quantity    Int
+  price       Int
+  cost        Int
+  imageUrl    String?
+}
