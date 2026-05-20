@@ -22,7 +22,9 @@ type LocalStore = {
   storeSettings: StoreSettings;
 };
 
-const storePath = join(process.cwd(), ".local-data", "stock-order-store.json");
+const storePath = process.env.VERCEL
+  ? join("/tmp", "stock-order-store.json")
+  : join(process.cwd(), ".local-data", "stock-order-store.json");
 const defaultCategories = ["ເຄື່ອງດື່ມ", "ອາຫານ", "ຂອງຂວັນ", "ຊຸດສິນຄ້າ"];
 const defaultShippingCompanies = ["ຮຸ່ງອາລຸນ", "ອານຸສິດ", "ມີໄຊ", "Unitel"];
 const defaultStoreSettings: StoreSettings = {
@@ -160,7 +162,14 @@ export async function readLocalStore(): Promise<LocalStore> {
     return hydrateStore(JSON.parse(raw) as LocalStore);
   } catch {
     const store = initialStore();
-    await writeLocalStore(store);
+
+    try {
+      await writeLocalStore(store);
+    } catch {
+      // Some serverless filesystems are read-only outside /tmp. The app can still
+      // continue with defaults when the local fallback store cannot be persisted.
+    }
+
     return store;
   }
 }
@@ -175,6 +184,14 @@ export async function updateLocalStore(
 ) {
   const current = await readLocalStore();
   const next = await updater(current);
-  await writeLocalStore(next);
+
+  try {
+    await writeLocalStore(next);
+  } catch (error) {
+    if (!process.env.VERCEL) {
+      throw error;
+    }
+  }
+
   return next;
 }

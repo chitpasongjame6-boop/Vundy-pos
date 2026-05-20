@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getDashboardStats } from "@/actions/dashboard.action";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
@@ -32,6 +33,7 @@ export async function GET() {
 
   try {
     const categoryCount = await prisma.category.count();
+    const dashboard = await getDashboardStats("ALL");
 
     return NextResponse.json({
       ok: true,
@@ -39,7 +41,12 @@ export async function GET() {
       host: parsedUrl.host,
       database: parsedUrl.pathname.replace("/", "") || null,
       authSource: parsedUrl.searchParams.get("authSource"),
-      categoryCount
+      categoryCount,
+      dashboard: {
+        todaySales: dashboard.todaySales,
+        todayOrders: dashboard.todayOrders,
+        lowStockProducts: dashboard.lowStockProducts.length
+      }
     });
   } catch (error) {
     return NextResponse.json(
