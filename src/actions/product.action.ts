@@ -18,6 +18,7 @@ const imageExtensions: Record<string, string> = {
   "image/webp": "webp",
   "image/gif": "gif"
 };
+const maxInlineImageSize = 1.5 * 1024 * 1024;
 
 export async function getProducts(filters?: {
   search?: string;
@@ -162,9 +163,18 @@ async function saveProductImage(value: FormDataEntryValue | null) {
     return null;
   }
 
+  const buffer = Buffer.from(await value.arrayBuffer());
+
+  if (process.env.VERCEL) {
+    if (buffer.byteLength > maxInlineImageSize) {
+      return null;
+    }
+
+    return `data:${value.type};base64,${buffer.toString("base64")}`;
+  }
+
   await mkdir(uploadDir, { recursive: true });
 
-  const buffer = Buffer.from(await value.arrayBuffer());
   const fileName = `${crypto.randomUUID()}.${extension}`;
   const filePath = join(uploadDir, fileName);
 
