@@ -8,6 +8,11 @@ import {
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  if (pathname === "/api/health") {
+    return NextResponse.next();
+  }
+
   const user = decodeSession(request.cookies.get(sessionCookieName)?.value ?? "");
 
   if (!user && pathname !== "/login") {
