@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { getRoleHome } from "@/lib/auth-config";
-import { getCurrentUser, getLoginUsers } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/auth";
 
 export default async function LoginPage({
   searchParams
@@ -18,8 +18,6 @@ export default async function LoginPage({
   if (currentUser) {
     redirect(getRoleHome(currentUser.role));
   }
-
-  const users = getLoginUsers();
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-zinc-50 px-4 py-8">
@@ -64,15 +62,8 @@ export default async function LoginPage({
               ເຂົ້າລະບົບ
             </Button>
           </form>
-
-          <div className="rounded-md bg-zinc-100 p-3 text-xs leading-5 text-zinc-600">
-            <p className="font-bold text-zinc-950">ບັນຊີທົດສອບເລີ່ມຕົ້ນ</p>
-            <p>ເຈົ້າຂອງ: {users.find((user) => user.role === "OWNER")?.username} / owner123</p>
-            <p>ພະນັກງານ: {users.find((user) => user.role === "STAFF")?.username} / staff123</p>
-          </div>
         </CardContent>
       </Card>
     </main>
   );
 }
-
