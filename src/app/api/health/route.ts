@@ -41,6 +41,12 @@ export async function GET() {
       host: parsedUrl.host,
       database: parsedUrl.pathname.replace("/", "") || null,
       authSource: parsedUrl.searchParams.get("authSource"),
+      auth: {
+        ownerUsername: process.env.OWNER_USERNAME ?? null,
+        ownerPasswordSet: Boolean(process.env.OWNER_PASSWORD),
+        staffUsername: process.env.STAFF_USERNAME ?? null,
+        staffPasswordSet: Boolean(process.env.STAFF_PASSWORD)
+      },
       categoryCount,
       dashboard: {
         todaySales: dashboard.todaySales,
