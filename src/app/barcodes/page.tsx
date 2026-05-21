@@ -102,7 +102,7 @@ export default async function BarcodesPage({ searchParams }: PageProps) {
               href="/barcodes"
               className={
                 mode === "products"
-                  ? "flex min-h-10 items-center justify-center gap-2 rounded-md bg-zinc-950 px-3 text-sm font-semibold text-white"
+                  ? "flex min-h-10 items-center justify-center gap-2 rounded-md bg-zinc-950 px-3 text-sm font-semibold text-white [&_svg]:text-white"
                   : "flex min-h-10 items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold text-zinc-700 hover:bg-zinc-100"
               }
             >
@@ -113,7 +113,7 @@ export default async function BarcodesPage({ searchParams }: PageProps) {
               href="/barcodes?mode=manual"
               className={
                 mode === "manual"
-                  ? "flex min-h-10 items-center justify-center gap-2 rounded-md bg-zinc-950 px-3 text-sm font-semibold text-white"
+                  ? "flex min-h-10 items-center justify-center gap-2 rounded-md bg-zinc-950 px-3 text-sm font-semibold text-white [&_svg]:text-white"
                   : "flex min-h-10 items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold text-zinc-700 hover:bg-zinc-100"
               }
             >
