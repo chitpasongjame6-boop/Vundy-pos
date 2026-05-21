@@ -33,6 +33,10 @@ function buildImageRemotePatterns(): RemotePattern[] {
     {
       protocol: "https",
       hostname: "images.unsplash.com"
+    },
+    {
+      protocol: "https",
+      hostname: "vl-stock-images.s3.ap-southeast-1.amazonaws.com"
     }
   ];
   const publicPattern = remotePatternFromUrl(process.env.S3_PUBLIC_URL_PREFIX);
