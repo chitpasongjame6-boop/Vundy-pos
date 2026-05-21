@@ -2,9 +2,11 @@
 
 import { getOrders } from "@/actions/order.action";
 import { getSales } from "@/actions/pos.action";
+import { getProducts } from "@/actions/product.action";
 import type {
   DashboardChannel,
   OrderItem,
+  Product,
   SaleItem,
   SoldProductSummary
 } from "@/types";
@@ -32,7 +34,12 @@ export async function getSoldProducts(
   const channel = parseChannel(filters?.channel);
   const search = filters?.search?.trim().toLowerCase();
   const dateRange = getDateRange(filters?.date);
-  const [orders, sales] = await Promise.all([getOrders(), getSales()]);
+  const [orders, sales, products] = await Promise.all([
+    getOrders(),
+    getSales(),
+    getProducts()
+  ]);
+  const imageByProductId = buildProductImageMap(products);
   const onlineItems: SoldItemSource[] =
     channel === "POS"
       ? []
@@ -82,7 +89,7 @@ export async function getSoldProducts(
       sku: item.sku,
       name: item.name,
       variantName: item.variantName,
-      imageUrl: item.imageUrl,
+      imageUrl: getBestImageUrl(item, current, soldAt, imageByProductId),
       quantity: (current?.quantity ?? 0) + item.quantity,
       latestPrice:
         !current || soldAt.getTime() >= current.lastSoldAt.getTime()
@@ -113,6 +120,34 @@ export async function getSoldProducts(
     totalAmount: soldProducts.reduce((sum, item) => sum + item.totalAmount, 0),
     totalProfit: soldProducts.reduce((sum, item) => sum + item.profit, 0)
   };
+}
+
+function buildProductImageMap(products: Product[]) {
+  return new Map(
+    products
+      .filter((product) => product.imageUrl)
+      .map((product) => [product.id, product.imageUrl])
+  );
+}
+
+function getBestImageUrl(
+  item: OrderItem | SaleItem,
+  current: SoldProductSummary | undefined,
+  soldAt: Date,
+  imageByProductId: Map<string, string | null | undefined>
+) {
+  const fallbackImage = imageByProductId.get(item.productId) ?? null;
+  const itemImage = item.imageUrl ?? fallbackImage;
+
+  if (!current) {
+    return itemImage;
+  }
+
+  if (itemImage && soldAt.getTime() >= current.lastSoldAt.getTime()) {
+    return itemImage;
+  }
+
+  return current.imageUrl ?? itemImage;
 }
 
 function parseChannel(value?: string): DashboardChannel {
