@@ -39,8 +39,8 @@ export default async function OrderHistoryPage({ searchParams }: PageProps) {
   return (
     <section>
       <PageHeader
-        title="ປະຫວັດອໍເດີ"
-        description="ຄົ້ນຫາ ກອງຕາມໝວດໝູ່ ແລະ ກວດປະຫວັດອໍເດີທັງໝົດ"
+        title="ປະຫວັດອອນໄລ"
+        description="ຄົ້ນຫາ ກອງຕາມໝວດໝູ່ ແລະ ກວດປະຫວັດອໍເດີອອນໄລທັງໝົດ"
       />
       <OrderFilters
         search={params?.search}

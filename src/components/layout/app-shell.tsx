@@ -34,8 +34,8 @@ const navItems = [
   { href: "/pos/history", label: "ປະຫວັດບິນ", icon: ReceiptText },
   { href: "/pos/closing", label: "ປິດຍອດ", icon: ClipboardCheck },
   { href: "/members", label: "ສະມາຊິກ", icon: UsersRound },
-  { href: "/orders", label: "ອໍເດີ", icon: ShoppingCart },
-  { href: "/orders/history", label: "ປະຫວັດ", icon: History },
+  { href: "/orders", label: "ອໍເດີອອນໄລ", icon: ShoppingCart },
+  { href: "/orders/history", label: "ປະຫວັດອອນໄລ", icon: History },
   {
     href: "/sold-products",
     label: "ສິນຄ້າຂາຍແລ້ວ",

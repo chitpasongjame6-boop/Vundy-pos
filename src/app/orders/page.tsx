@@ -12,8 +12,8 @@ export default async function OrdersPage() {
   return (
     <section>
       <PageHeader
-        title="ອໍເດີ"
-        description="ລາຍການອໍເດີຫຼັກ ແລະ ສ້າງອໍເດີໃໝ່"
+        title="ອໍເດີອອນໄລ"
+        description="ລາຍການອໍເດີອອນໄລ ແລະ ສ້າງອໍເດີໃໝ່"
         actionHref="/orders/new"
         actionLabel="ສ້າງອໍເດີ"
       />
