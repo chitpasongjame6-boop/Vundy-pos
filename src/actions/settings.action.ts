@@ -1,20 +1,12 @@
 "use server";
 
-import { mkdir, writeFile } from "fs/promises";
 import { revalidatePath } from "next/cache";
-import { join } from "path";
 import { prisma } from "@/lib/prisma";
 import { readLocalStore, updateLocalStore } from "@/lib/local-store";
+import { saveUploadedImage } from "@/lib/object-storage";
 import type { StoreSettings } from "@/types";
 
 const hasDatabase = Boolean(process.env.DATABASE_URL);
-const uploadDir = join(process.cwd(), "public", "uploads");
-const imageExtensions: Record<string, string> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/webp": "webp",
-  "image/gif": "gif"
-};
 
 export async function getCategories() {
   if (!hasDatabase) {
@@ -281,23 +273,8 @@ function revalidateShippingSettingsPaths() {
 }
 
 async function saveStoreLogo(value: FormDataEntryValue | null) {
-  if (!(value instanceof File) || value.size === 0) {
-    return null;
-  }
-
-  const extension = imageExtensions[value.type];
-
-  if (!extension) {
-    return null;
-  }
-
-  await mkdir(uploadDir, { recursive: true });
-
-  const buffer = Buffer.from(await value.arrayBuffer());
-  const fileName = `store-logo-${crypto.randomUUID()}.${extension}`;
-  const filePath = join(uploadDir, fileName);
-
-  await writeFile(filePath, buffer);
-
-  return `/uploads/${fileName}`;
+  return saveUploadedImage(value, {
+    folder: "settings",
+    fileNamePrefix: "store-logo"
+  });
 }

@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/input";
 import { MoneyInput } from "@/components/ui/money-input";
+import { resolvePublicAssetUrl } from "@/lib/asset-url";
 import { formatCurrency, getProductVariants } from "@/lib/utils";
 
 type ProductOption = {
@@ -498,9 +499,10 @@ function SummaryRow({
 }
 
 function printPosReceipt(sale: Sale, storeSettings: StoreSettings) {
-  const logoUrl = storeSettings.posReceiptLogoUrl
-    ? `${window.location.origin}${storeSettings.posReceiptLogoUrl}`
-    : "";
+  const logoUrl = resolvePublicAssetUrl(
+    storeSettings.posReceiptLogoUrl,
+    window.location.origin
+  );
   const receiptHtml = getPosReceiptHtml(sale, storeSettings, logoUrl);
   const printWindow = window.open("", "_blank", "width=420,height=720");
 

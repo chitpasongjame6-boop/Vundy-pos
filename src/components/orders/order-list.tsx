@@ -22,6 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input, Select, Textarea } from "@/components/ui/input";
+import { resolvePublicAssetUrl } from "@/lib/asset-url";
 import { cn, formatCurrency, formatDate, statusConfig } from "@/lib/utils";
 
 export function OrderFilters({
@@ -563,9 +564,7 @@ function OrderDetailsPanel({
 }
 
 function printOrderBill(order: Order, storeSettings: StoreSettings) {
-  const logoUrl = storeSettings.logoUrl
-    ? `${window.location.origin}${storeSettings.logoUrl}`
-    : "";
+  const logoUrl = resolvePublicAssetUrl(storeSettings.logoUrl, window.location.origin);
   const billHtml = getOrderBillHtml(order, storeSettings, logoUrl);
   const printWindow = window.open("", "_blank", "width=520,height=780");
 

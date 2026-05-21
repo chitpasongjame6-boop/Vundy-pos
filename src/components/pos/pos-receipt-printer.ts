@@ -1,12 +1,14 @@
 "use client";
 
 import type { Sale, SalePaymentMethod, StoreSettings } from "@/types";
+import { resolvePublicAssetUrl } from "@/lib/asset-url";
 import { formatCurrency } from "@/lib/utils";
 
 export function printPosReceiptCopy(sale: Sale, storeSettings: StoreSettings) {
-  const logoUrl = storeSettings.posReceiptLogoUrl
-    ? `${window.location.origin}${storeSettings.posReceiptLogoUrl}`
-    : "";
+  const logoUrl = resolvePublicAssetUrl(
+    storeSettings.posReceiptLogoUrl,
+    window.location.origin
+  );
   const receiptHtml = getPosReceiptHtml(sale, storeSettings, logoUrl);
   const printWindow = window.open("", "_blank", "width=420,height=720");
 

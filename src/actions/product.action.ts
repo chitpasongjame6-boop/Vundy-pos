@@ -1,24 +1,15 @@
 "use server";
 
-import { mkdir, writeFile } from "fs/promises";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { join } from "path";
 import { prisma } from "@/lib/prisma";
 import { readLocalStore, updateLocalStore } from "@/lib/local-store";
+import { saveUploadedImage } from "@/lib/object-storage";
 import { getProductVariants } from "@/lib/utils";
 import { getCategories } from "@/actions/settings.action";
 import type { Product, ProductVariant } from "@/types";
 
 const hasDatabase = Boolean(process.env.DATABASE_URL);
-const uploadDir = join(process.cwd(), "public", "uploads");
-const imageExtensions: Record<string, string> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/webp": "webp",
-  "image/gif": "gif"
-};
-const maxInlineImageSize = 1.5 * 1024 * 1024;
 
 export async function getProducts(filters?: {
   search?: string;
@@ -153,34 +144,10 @@ export async function submitCreateProduct(formData: FormData): Promise<void> {
 }
 
 async function saveProductImage(value: FormDataEntryValue | null) {
-  if (!(value instanceof File) || value.size === 0) {
-    return null;
-  }
-
-  const extension = imageExtensions[value.type];
-
-  if (!extension) {
-    return null;
-  }
-
-  const buffer = Buffer.from(await value.arrayBuffer());
-
-  if (process.env.VERCEL) {
-    if (buffer.byteLength > maxInlineImageSize) {
-      return null;
-    }
-
-    return `data:${value.type};base64,${buffer.toString("base64")}`;
-  }
-
-  await mkdir(uploadDir, { recursive: true });
-
-  const fileName = `${crypto.randomUUID()}.${extension}`;
-  const filePath = join(uploadDir, fileName);
-
-  await writeFile(filePath, buffer);
-
-  return `/uploads/${fileName}`;
+  return saveUploadedImage(value, {
+    folder: "products",
+    fileNamePrefix: "product"
+  });
 }
 
 function parseProductVariants(formData: FormData): ProductVariant[] {
