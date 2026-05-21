@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
 import {
   CalendarDays,
@@ -166,18 +167,30 @@ export function OrderList({
                 </div>
 
                 <div className="rounded-md border border-zinc-200 p-3">
-                  <p className="flex items-center gap-2 text-sm font-semibold text-zinc-950">
-                    <Package className="h-4 w-4 text-zinc-500" aria-hidden />
-                    {firstItem
-                      ? `${firstItem.name}${firstItem.variantName ? ` - ${firstItem.variantName}` : ""}`
-                      : "ບໍ່ມີລາຍການສິນຄ້າ"}
-                  </p>
                   {firstItem ? (
-                    <p className="mt-1 text-sm text-zinc-500">
-                      {firstItem.sku} · x{firstItem.quantity}
-                      {moreItems ? ` · +${moreItems} ລາຍການ` : ""}
+                    <div className="grid grid-cols-[3rem_1fr] items-center gap-3">
+                      <OrderItemThumbnail
+                        imageUrl={firstItem.imageUrl}
+                        name={firstItem.name}
+                        size="sm"
+                      />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-zinc-950">
+                          {firstItem.name}
+                          {firstItem.variantName ? ` - ${firstItem.variantName}` : ""}
+                        </p>
+                        <p className="mt-1 truncate text-sm text-zinc-500">
+                          {firstItem.sku} · x{firstItem.quantity}
+                          {moreItems ? ` · +${moreItems} ລາຍການ` : ""}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="flex items-center gap-2 text-sm font-semibold text-zinc-950">
+                      <Package className="h-4 w-4 text-zinc-500" aria-hidden />
+                      ບໍ່ມີລາຍການສິນຄ້າ
                     </p>
-                  ) : null}
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-sm">
@@ -297,14 +310,21 @@ function OrderDetailsPanel({
               className="rounded-md border border-zinc-200 p-3"
             >
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-semibold text-zinc-950">
-                    {item.name}
-                    {item.variantName ? ` - ${item.variantName}` : ""}
-                  </p>
-                  <p className="text-zinc-500">
-                    {item.sku} · x{item.quantity}
-                  </p>
+                <div className="grid min-w-0 grid-cols-[3.5rem_1fr] gap-3">
+                  <OrderItemThumbnail
+                    imageUrl={item.imageUrl}
+                    name={item.name}
+                    size="md"
+                  />
+                  <div className="min-w-0">
+                    <p className="font-semibold text-zinc-950">
+                      {item.name}
+                      {item.variantName ? ` - ${item.variantName}` : ""}
+                    </p>
+                    <p className="text-zinc-500">
+                      {item.sku} · x{item.quantity}
+                    </p>
+                  </div>
                 </div>
                 <p className="font-semibold text-zinc-950">
                   {formatCurrency(item.price * item.quantity)}
@@ -559,6 +579,39 @@ function OrderDetailsPanel({
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function OrderItemThumbnail({
+  imageUrl,
+  name,
+  size
+}: {
+  imageUrl?: string | null;
+  name: string;
+  size: "sm" | "md";
+}) {
+  const className = cn(
+    "relative shrink-0 overflow-hidden rounded-md border border-zinc-200 bg-zinc-100",
+    size === "sm" ? "h-12 w-12" : "h-14 w-14"
+  );
+
+  return (
+    <div className={className}>
+      {imageUrl ? (
+        <Image
+          src={imageUrl}
+          alt={name}
+          fill
+          sizes={size === "sm" ? "48px" : "56px"}
+          className="object-cover"
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center">
+          <Package className="h-5 w-5 text-zinc-400" aria-hidden />
+        </div>
+      )}
     </div>
   );
 }

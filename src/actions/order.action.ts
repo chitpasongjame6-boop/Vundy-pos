@@ -27,7 +27,8 @@ export async function getOrders(filters?: {
   if (!hasDatabase) {
     const store = await readLocalStore();
 
-    return store.orders.filter((order) => {
+    return enrichOrderItemImages(
+      store.orders.filter((order) => {
       const search = filters?.search?.toLowerCase().trim();
       const category = filters?.category?.trim();
       const matchesSearch = search
@@ -55,7 +56,9 @@ export async function getOrders(filters?: {
         : true;
 
       return matchesSearch && matchesStatus && matchesCategory && matchesDate;
-    });
+      }),
+      store.products
+    );
   }
 
   const orders = (await prisma.order.findMany({
@@ -79,7 +82,7 @@ export async function getOrders(filters?: {
     orderBy: { createdAt: "desc" }
   })) as Order[];
 
-  return orders.filter((order) => {
+  const filteredOrders = orders.filter((order) => {
     const search = filters?.search?.toLowerCase().trim();
     const matchesSearch = search
       ? order.customerName.toLowerCase().includes(search) ||
@@ -100,6 +103,47 @@ export async function getOrders(filters?: {
 
     return matchesSearch && matchesCategory;
   });
+
+  const productIds = [
+    ...new Set(
+      filteredOrders
+        .flatMap((order) => order.items)
+        .filter((item) => !item.imageUrl)
+        .map((item) => item.productId)
+    )
+  ];
+  const products = productIds.length
+    ? ((await prisma.product.findMany({
+        where: { id: { in: productIds } },
+        select: { id: true, imageUrl: true }
+      })) as unknown as Product[])
+    : [];
+
+  return enrichOrderItemImages(filteredOrders, products);
+}
+
+function enrichOrderItemImages(orders: Order[], products: Pick<Product, "id" | "imageUrl">[]) {
+  if (!products.length) {
+    return orders;
+  }
+
+  const imageByProductId = new Map(
+    products
+      .filter((product) => product.imageUrl)
+      .map((product) => [product.id, product.imageUrl])
+  );
+
+  if (!imageByProductId.size) {
+    return orders;
+  }
+
+  return orders.map((order) => ({
+    ...order,
+    items: order.items.map((item) => ({
+      ...item,
+      imageUrl: item.imageUrl ?? imageByProductId.get(item.productId) ?? null
+    }))
+  }));
 }
 
 function getDateRange(value?: string) {
