@@ -100,10 +100,49 @@ export async function getPosSaleHistory(filters?: PosSaleHistoryFilters): Promis
   });
 
   return {
-    sales: filteredSales,
+    sales: await enrichSaleItemImages(filteredSales),
     summary: summarizeSales(filteredSales),
     paymentMethod
   };
+}
+
+async function enrichSaleItemImages(sales: Sale[]) {
+  const missingProductIds = [
+    ...new Set(
+      sales
+        .flatMap((sale) => sale.items)
+        .filter((item) => !item.imageUrl)
+        .map((item) => item.productId)
+    )
+  ];
+
+  if (!missingProductIds.length) {
+    return sales;
+  }
+
+  const products = hasDatabase
+    ? ((await prisma.product.findMany({
+        where: { id: { in: missingProductIds } },
+        select: { id: true, imageUrl: true }
+      })) as unknown as Pick<Product, "id" | "imageUrl">[])
+    : (await readLocalStore()).products;
+  const imageByProductId = new Map(
+    products
+      .filter((product) => product.imageUrl)
+      .map((product) => [product.id, product.imageUrl])
+  );
+
+  if (!imageByProductId.size) {
+    return sales;
+  }
+
+  return sales.map((sale) => ({
+    ...sale,
+    items: sale.items.map((item) => ({
+      ...item,
+      imageUrl: item.imageUrl ?? imageByProductId.get(item.productId) ?? null
+    }))
+  }));
 }
 
 function summarizeSales(sales: Sale[]): PosPaymentSummary {

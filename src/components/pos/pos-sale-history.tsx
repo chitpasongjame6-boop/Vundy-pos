@@ -1,7 +1,8 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
-import { Banknote, Eye, Printer, X } from "lucide-react";
+import { Banknote, Eye, Package, Printer, X } from "lucide-react";
 import { voidPosSale } from "@/actions/pos.action";
 import type { Sale, StoreSettings } from "@/types";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, Textarea } from "@/components/ui/input";
 import { printPosReceiptCopy } from "@/components/pos/pos-receipt-printer";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { cn, formatCurrency, formatDate } from "@/lib/utils";
 
 export function PosSaleHistory({
   sales,
@@ -62,14 +63,34 @@ export function PosSaleHistory({
               </div>
 
               <div className="rounded-md border border-zinc-200 p-3">
-                <p className="text-sm font-semibold text-zinc-950">
-                  {sale.items[0]?.name ?? "ບໍ່ມີລາຍການ"}
-                  {sale.items[0]?.variantName ? ` - ${sale.items[0].variantName}` : ""}
-                </p>
-                <p className="mt-1 text-sm text-zinc-500">
-                  {sale.items.reduce((sum, item) => sum + item.quantity, 0)} ຊິ້ນ
-                  {sale.items.length > 1 ? ` · +${sale.items.length - 1} ລາຍການ` : ""}
-                </p>
+                {sale.items[0] ? (
+                  <div className="grid grid-cols-[3rem_1fr] items-center gap-3">
+                    <SaleItemThumbnail
+                      imageUrl={sale.items[0].imageUrl}
+                      name={sale.items[0].name}
+                      size="sm"
+                    />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-zinc-950">
+                        {sale.items[0].name}
+                        {sale.items[0].variantName
+                          ? ` - ${sale.items[0].variantName}`
+                          : ""}
+                      </p>
+                      <p className="mt-1 truncate text-sm text-zinc-500">
+                        {sale.items.reduce((sum, item) => sum + item.quantity, 0)} ຊິ້ນ
+                        {sale.items.length > 1
+                          ? ` · +${sale.items.length - 1} ລາຍການ`
+                          : ""}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="flex items-center gap-2 text-sm font-semibold text-zinc-950">
+                    <Package className="h-4 w-4 text-zinc-500" aria-hidden />
+                    ບໍ່ມີລາຍການ
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-2 text-sm">
@@ -213,14 +234,21 @@ function SaleDetail({
               className="rounded-md border border-zinc-200 p-3"
             >
               <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-semibold text-zinc-950">
-                    {item.name}
-                    {item.variantName ? ` - ${item.variantName}` : ""}
-                  </p>
-                  <p className="text-zinc-500">
-                    {item.sku} · x{item.quantity}
-                  </p>
+                <div className="grid min-w-0 grid-cols-[3.5rem_1fr] gap-3">
+                  <SaleItemThumbnail
+                    imageUrl={item.imageUrl}
+                    name={item.name}
+                    size="md"
+                  />
+                  <div className="min-w-0">
+                    <p className="font-semibold text-zinc-950">
+                      {item.name}
+                      {item.variantName ? ` - ${item.variantName}` : ""}
+                    </p>
+                    <p className="text-zinc-500">
+                      {item.sku} · x{item.quantity}
+                    </p>
+                  </div>
                 </div>
                 <p className="font-semibold text-zinc-950">
                   {formatCurrency(item.price * item.quantity)}
@@ -289,6 +317,39 @@ function SaleDetail({
         <Printer className="h-4 w-4" aria-hidden />
         ປິ້ນບິນຊໍ້າ
       </Button>
+    </div>
+  );
+}
+
+function SaleItemThumbnail({
+  imageUrl,
+  name,
+  size
+}: {
+  imageUrl?: string | null;
+  name: string;
+  size: "sm" | "md";
+}) {
+  return (
+    <div
+      className={cn(
+        "relative shrink-0 overflow-hidden rounded-md border border-zinc-200 bg-zinc-100",
+        size === "sm" ? "h-12 w-12" : "h-14 w-14"
+      )}
+    >
+      {imageUrl ? (
+        <Image
+          src={imageUrl}
+          alt={name}
+          fill
+          sizes={size === "sm" ? "48px" : "56px"}
+          className="object-cover"
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center">
+          <Package className="h-5 w-5 text-zinc-400" aria-hidden />
+        </div>
+      )}
     </div>
   );
 }
