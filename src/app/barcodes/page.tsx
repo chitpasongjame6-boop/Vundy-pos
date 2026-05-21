@@ -1,17 +1,12 @@
-import { ListChecks, PlusSquare, Search } from "lucide-react";
-import { getProductCategories, getProducts } from "@/actions/product.action";
+import { PlusSquare } from "lucide-react";
 import { BarcodePrintButton } from "@/components/barcodes/barcode-print-button";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input, Select } from "@/components/ui/input";
-import { getProductVariants } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
 
 type PageProps = {
   searchParams?: Promise<{
-    search?: string;
-    category?: string;
-    mode?: string;
     manualName?: string;
     manualVariant?: string;
     manualCode?: string;
@@ -67,71 +62,18 @@ const code39: Record<string, string> = {
 
 export default async function BarcodesPage({ searchParams }: PageProps) {
   const params = await searchParams;
-  const mode = params?.mode === "manual" ? "manual" : "products";
-  const [products, categories] = await Promise.all([
-    getProducts({
-      search: params?.search,
-      category: params?.category,
-      activeOnly: false
-    }),
-    getProductCategories()
-  ]);
-  const productLabels = products
-    .filter((product) => product.isActive)
-    .flatMap((product) =>
-      getProductVariants(product).map((variant) => ({
-        id: `${product.id}-${variant.id}`,
-        name: product.name,
-        variantName: variant.name,
-        barcodeValue: normalizeCode39(variant.sku || product.sku)
-      }))
-    );
   const manualLabel = buildManualLabel(params);
-  const labels = mode === "manual" ? (manualLabel ? [manualLabel] : []) : productLabels;
+  const labels = manualLabel ? [manualLabel] : [];
 
   return (
     <section>
       <div className="print:hidden">
         <PageHeader
           title="ພິມສະຕິກເກີ Barcode"
-          description="ສ້າງ barcode ຈາກ SKU ເພື່ອພິມຕິດສິນຄ້າ ແລະໃຊ້ສະແກນໄດ້"
+          description="ປ້ອນລະຫັດ barcode ເອງເພື່ອພິມສະເພາະສິນຄ້າທີ່ຕ້ອງການ"
         />
-        <div className="mb-4 grid gap-3 lg:grid-cols-[auto_1fr_auto]">
-          <div className="grid grid-cols-2 gap-2 rounded-md border border-zinc-200 bg-white p-1">
-            <a
-              href="/barcodes"
-              className={
-                mode === "products"
-                  ? "flex min-h-10 items-center justify-center gap-2 rounded-md bg-zinc-950 px-3 text-sm font-semibold text-white [&_svg]:text-white"
-                  : "flex min-h-10 items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold text-zinc-700 hover:bg-zinc-100"
-              }
-            >
-              <ListChecks className="h-4 w-4" aria-hidden />
-              ລາຍການສິນຄ້າ
-            </a>
-            <a
-              href="/barcodes?mode=manual"
-              className={
-                mode === "manual"
-                  ? "flex min-h-10 items-center justify-center gap-2 rounded-md bg-zinc-950 px-3 text-sm font-semibold text-white [&_svg]:text-white"
-                  : "flex min-h-10 items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold text-zinc-700 hover:bg-zinc-100"
-              }
-            >
-              <PlusSquare className="h-4 w-4" aria-hidden />
-              ສ້າງເອງ
-            </a>
-          </div>
-
-          {mode === "manual" ? (
-            <ManualBarcodeForm params={params} />
-          ) : (
-            <ProductBarcodeFilters
-              categories={categories}
-              search={params?.search}
-              category={params?.category}
-            />
-          )}
-
+        <div className="mb-4 grid gap-3 lg:grid-cols-[1fr_auto]">
+          <ManualBarcodeForm params={params} />
           <BarcodePrintButton disabled={!labels.length} />
         </div>
       </div>
@@ -160,49 +102,12 @@ export default async function BarcodesPage({ searchParams }: PageProps) {
         <Card>
           <CardContent>
             <p className="text-sm text-zinc-500">
-              {mode === "manual"
-                ? "ກະລຸນາປ້ອນຊື່ ແລະລະຫັດ barcode ເພື່ອສ້າງສະຕິກເກີ"
-                : "ບໍ່ພົບສິນຄ້າສໍາລັບພິມ barcode"}
+              ກະລຸນາປ້ອນຊື່ ແລະລະຫັດ barcode ເພື່ອສ້າງສະຕິກເກີ
             </p>
           </CardContent>
         </Card>
       )}
     </section>
-  );
-}
-
-function ProductBarcodeFilters({
-  categories,
-  search,
-  category
-}: {
-  categories: string[];
-  search?: string;
-  category?: string;
-}) {
-  return (
-    <form className="grid gap-3 md:grid-cols-[1fr_14rem_auto]">
-      <label className="relative">
-        <Search className="pointer-events-none absolute left-3 top-3 h-5 w-5 text-zinc-400" />
-        <Input
-          name="search"
-          defaultValue={search}
-          placeholder="ຄົ້ນຫາສິນຄ້າ ຫຼື SKU"
-          className="pl-10"
-        />
-      </label>
-      <Select name="category" defaultValue={category ?? ""}>
-        <option value="">ທຸກໝວດໝູ່</option>
-        {categories.map((item) => (
-          <option key={item} value={item}>
-            {item}
-          </option>
-        ))}
-      </Select>
-      <Button type="submit" variant="secondary">
-        ຄົ້ນຫາ
-      </Button>
-    </form>
   );
 }
 
@@ -217,7 +122,6 @@ function ManualBarcodeForm({
 }) {
   return (
     <form className="grid gap-3 md:grid-cols-[1fr_12rem_12rem_auto]">
-      <input type="hidden" name="mode" value="manual" />
       <Input
         name="manualName"
         defaultValue={params?.manualName ?? ""}
@@ -236,6 +140,7 @@ function ManualBarcodeForm({
         required
       />
       <Button type="submit" variant="secondary">
+        <PlusSquare className="h-4 w-4" aria-hidden />
         ສ້າງ
       </Button>
     </form>
