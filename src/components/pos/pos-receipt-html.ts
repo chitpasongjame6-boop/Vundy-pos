@@ -56,7 +56,7 @@ export function buildPosReceiptHtml(
           * {
             box-sizing: border-box;
             color: #000000;
-            font-family: "Courier New", "Noto Sans Lao", monospace !important;
+            font-family: "Phetsarath OT", "Saysettha OT", "Noto Sans Lao", Arial, sans-serif !important;
             letter-spacing: 0;
             print-color-adjust: exact;
             -webkit-print-color-adjust: exact;
@@ -68,7 +68,7 @@ export function buildPosReceiptHtml(
             margin: 0;
             padding: 0;
             background: #ffffff;
-            font-family: "Courier New", "Noto Sans Lao", monospace !important;
+            font-family: "Phetsarath OT", "Saysettha OT", "Noto Sans Lao", Arial, sans-serif !important;
           }
           body {
             font-size: ${baseFontSize};
