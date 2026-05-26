@@ -14,11 +14,11 @@ export function buildPosReceiptHtml(
   const logoWidth = isSmallReceipt ? "86px" : "128px";
   const logoHeight = isSmallReceipt ? "58px" : "82px";
   const receiptPadding = isSmallReceipt ? "5px 0" : "6px 0";
-  const baseFontSize = isSmallReceipt ? "11.5px" : "13px";
-  const titleFontSize = isSmallReceipt ? "15px" : "18px";
-  const smallFontSize = isSmallReceipt ? "10px" : "11.5px";
-  const itemFontSize = isSmallReceipt ? "11.5px" : "13.5px";
-  const totalFontSize = isSmallReceipt ? "16px" : "19px";
+  const baseFontSize = isSmallReceipt ? "12px" : "13.8px";
+  const titleFontSize = isSmallReceipt ? "16px" : "19px";
+  const smallFontSize = isSmallReceipt ? "10.5px" : "12px";
+  const itemFontSize = isSmallReceipt ? "12.2px" : "14.2px";
+  const totalFontSize = isSmallReceipt ? "17px" : "20.5px";
 
   return `
     <!doctype html>
@@ -57,10 +57,10 @@ export function buildPosReceiptHtml(
             box-sizing: border-box;
             color: #000000;
             font-family: "Noto Sans Lao", Arial, sans-serif !important;
-            font-synthesis-weight: none;
             letter-spacing: 0;
             print-color-adjust: exact;
             -webkit-print-color-adjust: exact;
+            text-rendering: geometricPrecision;
           }
           html, body {
             width: ${paperWidth};
@@ -72,7 +72,7 @@ export function buildPosReceiptHtml(
           }
           body {
             font-size: ${baseFontSize};
-            font-weight: 500;
+            font-weight: 700;
             line-height: 1.35;
           }
           .receipt {
@@ -95,19 +95,19 @@ export function buildPosReceiptHtml(
           }
           h1 {
             font-size: ${titleFontSize};
-            font-weight: 700;
+            font-weight: 800;
             margin: 0;
             line-height: 1.18;
           }
           .subtitle {
             font-size: ${smallFontSize};
-            font-weight: 700;
+            font-weight: 800;
             margin-top: 3px;
             line-height: 1.25;
           }
           .meta {
             font-size: ${smallFontSize};
-            font-weight: 600;
+            font-weight: 700;
             margin-top: 4px;
             line-height: 1.25;
           }
@@ -123,7 +123,7 @@ export function buildPosReceiptHtml(
           }
           .name {
             font-size: ${itemFontSize};
-            font-weight: 700;
+            font-weight: 800;
             line-height: 1.3;
           }
           .line {
@@ -131,10 +131,11 @@ export function buildPosReceiptHtml(
             justify-content: space-between;
             gap: 8px;
             font-size: ${baseFontSize};
+            font-weight: 700;
             line-height: 1.45;
           }
           .line strong {
-            font-weight: 700;
+            font-weight: 800;
           }
           .totals {
             padding-top: 8px;
@@ -144,13 +145,13 @@ export function buildPosReceiptHtml(
             margin-top: 5px;
             padding-top: 5px;
             font-size: ${totalFontSize};
-            font-weight: 700;
+            font-weight: 900;
           }
           .thanks {
             margin-top: 11px;
             text-align: center;
             font-size: ${baseFontSize};
-            font-weight: 700;
+            font-weight: 800;
           }
           @media screen {
             body { padding: 10px; }
@@ -160,6 +161,7 @@ export function buildPosReceiptHtml(
             html, body { width: ${paperWidth}; min-width: ${paperWidth}; }
             body { padding: 0; }
             .receipt { border: 0; }
+            .receipt { -webkit-text-stroke: 0.08px #000000; }
           }
         </style>
       </head>
