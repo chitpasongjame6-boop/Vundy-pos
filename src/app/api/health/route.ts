@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDashboardStats } from "@/actions/dashboard.action";
+import { getObjectStorageHealth } from "@/lib/object-storage";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
@@ -47,6 +48,7 @@ export async function GET() {
         staffUsername: process.env.STAFF_USERNAME ?? null,
         staffPasswordSet: Boolean(process.env.STAFF_PASSWORD)
       },
+      storage: getObjectStorageHealth(),
       categoryCount,
       dashboard: {
         todaySales: dashboard.todaySales,

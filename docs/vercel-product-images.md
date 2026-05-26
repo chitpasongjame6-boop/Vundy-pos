@@ -1,13 +1,13 @@
-# Product Images on S3
+# Product Images on Vercel
 
-Uploaded product images and store/POS logos are stored in S3 only. The app does not write runtime uploads into the local filesystem and does not store uploaded images as base64 data URLs.
+Uploaded product images and store/POS logos use object storage when S3-compatible settings are available. The app does not write runtime uploads into `public/uploads` on Vercel.
 
 ## Behavior
 
 - Uploaded images are saved through `src/lib/object-storage.ts`.
-- S3 configuration is required before uploading images.
-- Product records and store settings store only the public image URL returned after upload.
-- If S3 is not configured, image upload throws a configuration error.
+- If S3 is configured, product records and store settings store the public object URL.
+- If S3 is not configured or upload fails, small images fall back to inline `data:image/...;base64,...` storage.
+- If the fallback image is too large, the product/settings save continues without the image.
 
 ## S3 Environment
 
@@ -32,6 +32,8 @@ S3_ACL="public-read"
 ## Size Limit
 
 Server Action upload body size is configured in `next.config.ts` as `8mb`.
+
+Inline fallback images are limited to about 1.5 MB to avoid oversized MongoDB documents.
 
 ## Production Notes
 

@@ -6,6 +6,7 @@ const imageExtensions: Record<string, string> = {
   "image/webp": "webp",
   "image/gif": "gif"
 };
+const maxInlineImageSize = 1.5 * 1024 * 1024;
 
 type SaveUploadedImageOptions = {
   folder: string;
@@ -42,24 +43,38 @@ export async function saveUploadedImage(
   const s3Config = getS3Config();
 
   if (!s3Config) {
-    throw new Error(
-      "S3 upload is not configured. Set S3_BUCKET, S3_REGION, S3_ACCESS_KEY_ID, and S3_SECRET_ACCESS_KEY."
-    );
+    return buildInlineImageUrl(buffer, value.type);
   }
 
   const key = buildObjectKey(options.folder, options.fileNamePrefix, extension);
-  await getS3Client(s3Config).send(
-    new PutObjectCommand({
-      Bucket: s3Config.bucket,
-      Key: key,
-      Body: buffer,
-      ContentType: value.type,
-      CacheControl: "public, max-age=31536000, immutable",
-      ACL: process.env.S3_ACL === "public-read" ? "public-read" : undefined
-    })
-  );
+  try {
+    await getS3Client(s3Config).send(
+      new PutObjectCommand({
+        Bucket: s3Config.bucket,
+        Key: key,
+        Body: buffer,
+        ContentType: value.type,
+        CacheControl: "public, max-age=31536000, immutable",
+        ACL: process.env.S3_ACL === "public-read" ? "public-read" : undefined
+      })
+    );
+  } catch {
+    return buildInlineImageUrl(buffer, value.type);
+  }
 
   return buildPublicObjectUrl(s3Config, key);
+}
+
+export function getObjectStorageHealth() {
+  const config = getS3Config();
+
+  return {
+    s3Configured: Boolean(config),
+    bucket: config?.bucket ?? null,
+    region: config?.region ?? null,
+    endpointConfigured: Boolean(config?.endpoint),
+    publicUrlPrefixConfigured: Boolean(config?.publicUrlPrefix)
+  };
 }
 
 function getS3Config(): S3Config | null {
@@ -132,6 +147,14 @@ function buildPublicObjectUrl(config: S3Config, key: string) {
       : `${config.bucket}.s3.${config.region}.amazonaws.com`;
 
   return `https://${host}/${key}`;
+}
+
+function buildInlineImageUrl(buffer: Buffer, contentType: string) {
+  if (buffer.byteLength > maxInlineImageSize) {
+    return null;
+  }
+
+  return `data:${contentType};base64,${buffer.toString("base64")}`;
 }
 
 function parseBoolean(value?: string) {
