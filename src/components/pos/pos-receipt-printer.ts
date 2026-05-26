@@ -1,6 +1,7 @@
 "use client";
 
 import type { Sale, SalePaymentMethod, StoreSettings } from "@/types";
+import { buildPosReceiptHtml } from "@/components/pos/pos-receipt-html";
 import { resolvePublicAssetUrl } from "@/lib/asset-url";
 import { formatCurrency } from "@/lib/utils";
 
@@ -27,6 +28,8 @@ function getPosReceiptHtml(
   storeSettings: StoreSettings,
   logoUrl: string
 ) {
+  return buildPosReceiptHtml(sale, storeSettings, logoUrl);
+
   const receiptWidth = storeSettings.posReceiptSize === "POS_58MM" ? "58mm" : "80mm";
   const logoWidth = storeSettings.posReceiptSize === "POS_58MM" ? "76px" : "96px";
   const logoHeight = storeSettings.posReceiptSize === "POS_58MM" ? "52px" : "64px";
@@ -244,8 +247,8 @@ function paymentMethodLabel(value: SalePaymentMethod) {
   return "ເງິນສົດ";
 }
 
-function escapeHtml(value: string) {
-  return value
+function escapeHtml(value: string | null | undefined) {
+  return (value ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
