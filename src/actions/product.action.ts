@@ -15,11 +15,14 @@ export async function getProducts(filters?: {
   search?: string;
   category?: string;
   activeOnly?: boolean;
+  limit?: number;
 }) {
+  const limit = normalizeLimit(filters?.limit);
+
   if (!hasDatabase) {
     const store = await readLocalStore();
 
-    return store.products.filter((product) => {
+    const filtered = store.products.filter((product) => {
       const search = filters?.search?.toLowerCase().trim();
       const matchesSearch = search
         ? product.name.toLowerCase().includes(search) ||
@@ -35,6 +38,8 @@ export async function getProducts(filters?: {
 
       return matchesSearch && matchesCategory && matchesActive;
     });
+
+    return limit ? filtered.slice(0, limit) : filtered;
   }
 
   const products = (await prisma.product.findMany({
@@ -42,7 +47,8 @@ export async function getProducts(filters?: {
       isActive: filters?.activeOnly ? true : undefined,
       category: filters?.category || undefined
     },
-    orderBy: { updatedAt: "desc" }
+    orderBy: { updatedAt: "desc" },
+    take: filters?.search ? undefined : limit
   })) as unknown as Product[];
 
   const search = filters?.search?.toLowerCase().trim();
@@ -51,7 +57,7 @@ export async function getProducts(filters?: {
     return products;
   }
 
-  return products.filter(
+  const filteredProducts = products.filter(
     (product) =>
       product.name.toLowerCase().includes(search) ||
       product.sku.toLowerCase().includes(search) ||
@@ -59,6 +65,16 @@ export async function getProducts(filters?: {
         variant.sku.toLowerCase().includes(search)
       )
   );
+
+  return limit ? filteredProducts.slice(0, limit) : filteredProducts;
+}
+
+function normalizeLimit(value?: number) {
+  if (!value) {
+    return undefined;
+  }
+
+  return Math.min(Math.max(Math.floor(value), 1), 200);
 }
 
 export async function getProductCategories() {

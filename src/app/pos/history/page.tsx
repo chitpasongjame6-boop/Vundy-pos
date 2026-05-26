@@ -23,7 +23,8 @@ export default async function PosHistoryPage({
     getPosSaleHistory({
       search: params?.search,
       paymentMethod: params?.paymentMethod,
-      date: params?.date
+      date: params?.date,
+      limit: 100
     }),
     getStoreSettings()
   ]);

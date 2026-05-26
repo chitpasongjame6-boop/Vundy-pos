@@ -21,14 +21,15 @@ export async function getOrders(filters?: {
   status?: OrderStatus | "ALL";
   category?: string;
   date?: string;
+  limit?: number;
 }) {
   const dateRange = getDateRange(filters?.date);
+  const limit = normalizeLimit(filters?.limit);
 
   if (!hasDatabase) {
     const store = await readLocalStore();
 
-    return enrichOrderItemImages(
-      store.orders.filter((order) => {
+    const filtered = store.orders.filter((order) => {
       const search = filters?.search?.toLowerCase().trim();
       const category = filters?.category?.trim();
       const matchesSearch = search
@@ -56,7 +57,10 @@ export async function getOrders(filters?: {
         : true;
 
       return matchesSearch && matchesStatus && matchesCategory && matchesDate;
-      }),
+      });
+
+    return enrichOrderItemImages(
+      limit ? filtered.slice(0, limit) : filtered,
       store.products
     );
   }
@@ -79,7 +83,8 @@ export async function getOrders(filters?: {
           ]
         : undefined
     },
-    orderBy: { createdAt: "desc" }
+    orderBy: { createdAt: "desc" },
+    take: filters?.category || filters?.search ? undefined : limit
   })) as Order[];
 
   const filteredOrders = orders.filter((order) => {
@@ -119,7 +124,15 @@ export async function getOrders(filters?: {
       })) as unknown as Product[])
     : [];
 
-  return enrichOrderItemImages(filteredOrders, products);
+  return enrichOrderItemImages(limit ? filteredOrders.slice(0, limit) : filteredOrders, products);
+}
+
+function normalizeLimit(value?: number) {
+  if (!value) {
+    return undefined;
+  }
+
+  return Math.min(Math.max(Math.floor(value), 1), 200);
 }
 
 function enrichOrderItemImages(orders: Order[], products: Pick<Product, "id" | "imageUrl">[]) {

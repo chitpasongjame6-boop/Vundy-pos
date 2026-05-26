@@ -5,7 +5,7 @@ import { OrderList } from "@/components/orders/order-list";
 
 export default async function OrdersPage() {
   const [orders, storeSettings] = await Promise.all([
-    getOrders(),
+    getOrders({ limit: 60 }),
     getStoreSettings()
   ]);
 

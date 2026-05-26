@@ -15,7 +15,8 @@ export default async function ProductsPage({ searchParams }: PageProps) {
     getProducts({
       search: params?.search,
       category: params?.category,
-      activeOnly: false
+      activeOnly: false,
+      limit: 80
     }),
     getProductCategories()
   ]);

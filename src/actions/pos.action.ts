@@ -41,6 +41,7 @@ type PosSaleHistoryFilters = {
   search?: string;
   paymentMethod?: SalePaymentMethod | "ALL" | string;
   date?: string;
+  limit?: number;
 };
 
 type StoreSnapshot = Awaited<ReturnType<typeof readLocalStore>>;
@@ -73,10 +74,35 @@ export async function getPosSaleHistory(filters?: PosSaleHistoryFilters): Promis
   summary: PosPaymentSummary;
   paymentMethod: SalePaymentMethod | "ALL";
 }> {
-  const sales = await getSales();
   const search = filters?.search?.trim().toLowerCase();
   const paymentMethod = parsePaymentFilter(filters?.paymentMethod);
   const dateRange = getDateRange(filters?.date);
+  const limit = normalizeLimit(filters?.limit) ?? 100;
+
+  if (hasDatabase && !search) {
+    const filteredSales = (await prisma.sale.findMany({
+      where: {
+        status: "ACTIVE",
+        paymentMethod: paymentMethod === "ALL" ? undefined : paymentMethod,
+        createdAt: dateRange
+          ? {
+              gte: dateRange.start,
+              lt: dateRange.end
+            }
+          : undefined
+      },
+      orderBy: { createdAt: "desc" },
+      take: limit
+    })) as unknown as Sale[];
+
+    return {
+      sales: await enrichSaleItemImages(filteredSales),
+      summary: summarizeSales(filteredSales),
+      paymentMethod
+    };
+  }
+
+  const sales = await getSales();
   const filteredSales = sales.filter((sale) => {
     const matchesPayment =
       paymentMethod === "ALL" ? true : sale.paymentMethod === paymentMethod;
@@ -100,10 +126,18 @@ export async function getPosSaleHistory(filters?: PosSaleHistoryFilters): Promis
   });
 
   return {
-    sales: await enrichSaleItemImages(filteredSales),
+    sales: await enrichSaleItemImages(filteredSales.slice(0, limit)),
     summary: summarizeSales(filteredSales),
     paymentMethod
   };
+}
+
+function normalizeLimit(value?: number) {
+  if (!value) {
+    return undefined;
+  }
+
+  return Math.min(Math.max(Math.floor(value), 1), 200);
 }
 
 async function enrichSaleItemImages(sales: Sale[]) {

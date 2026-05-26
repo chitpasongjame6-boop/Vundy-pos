@@ -47,6 +47,9 @@ model Product {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  @@index([category])
+  @@index([isActive])
+  @@index([updatedAt])
   @@map("products")
 }
 
@@ -73,6 +76,11 @@ model Order {
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
+  @@index([createdAt])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([orderNo])
+  @@index([phone])
   @@map("orders")
 }
 
@@ -83,6 +91,7 @@ model Category {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([isActive])
   @@map("categories")
 }
 
@@ -113,6 +122,11 @@ model Sale {
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
 
+  @@index([createdAt])
+  @@index([status])
+  @@index([paymentMethod])
+  @@index([saleNo])
+  @@index([memberPhone])
   @@map("sales")
 }
 
@@ -133,6 +147,8 @@ model DailyClosing {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  @@index([date])
+  @@index([closedAt])
   @@map("daily_closings")
 }
 

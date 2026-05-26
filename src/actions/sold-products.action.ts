@@ -2,7 +2,7 @@
 
 import { getOrders } from "@/actions/order.action";
 import { getSales } from "@/actions/pos.action";
-import { getProducts } from "@/actions/product.action";
+import { prisma } from "@/lib/prisma";
 import type {
   DashboardChannel,
   OrderItem,
@@ -10,6 +10,8 @@ import type {
   SaleItem,
   SoldProductSummary
 } from "@/types";
+
+const hasDatabase = Boolean(process.env.DATABASE_URL);
 
 type SoldProductsFilters = {
   channel?: string;
@@ -34,12 +36,12 @@ export async function getSoldProducts(
   const channel = parseChannel(filters?.channel);
   const search = filters?.search?.trim().toLowerCase();
   const dateRange = getDateRange(filters?.date);
-  const [orders, sales, products] = await Promise.all([
-    getOrders(),
-    getSales(),
-    getProducts()
+  const [orders, sales] = await Promise.all([
+    channel === "POS"
+      ? Promise.resolve([])
+      : getOrders({ status: "SHIPPED", date: selectedDateOrUndefined(filters?.date) }),
+    channel === "ONLINE" ? Promise.resolve([]) : getSales()
   ]);
-  const imageByProductId = buildProductImageMap(products);
   const onlineItems: SoldItemSource[] =
     channel === "POS"
       ? []
@@ -75,6 +77,7 @@ export async function getSoldProducts(
       item.variantName?.toLowerCase().includes(search)
     );
   });
+  const imageByProductId = await buildProductImageMap(items);
   const productMap = new Map<string, SoldProductSummary>();
 
   for (const { item, soldAt } of items) {
@@ -122,12 +125,45 @@ export async function getSoldProducts(
   };
 }
 
-function buildProductImageMap(products: Product[]) {
+async function buildProductImageMap(items: SoldItemSource[]) {
+  const missingProductIds = [
+    ...new Set(
+      items
+        .map(({ item }) => item)
+        .filter((item) => !item.imageUrl)
+        .map((item) => item.productId)
+    )
+  ];
+
+  if (!missingProductIds.length) {
+    return new Map<string, string | null | undefined>();
+  }
+
+  if (hasDatabase) {
+    const products = (await prisma.product.findMany({
+      where: { id: { in: missingProductIds } },
+      select: { id: true, imageUrl: true }
+    })) as unknown as Pick<Product, "id" | "imageUrl">[];
+
+    return new Map(
+      products
+        .filter((product) => product.imageUrl)
+        .map((product) => [product.id, product.imageUrl])
+    );
+  }
+
+  const { readLocalStore } = await import("@/lib/local-store");
+  const store = await readLocalStore();
+
   return new Map(
-    products
-      .filter((product) => product.imageUrl)
+    store.products
+      .filter((product) => missingProductIds.includes(product.id) && product.imageUrl)
       .map((product) => [product.id, product.imageUrl])
   );
+}
+
+function selectedDateOrUndefined(value?: string) {
+  return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined;
 }
 
 function getBestImageUrl(

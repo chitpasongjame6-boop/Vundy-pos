@@ -30,7 +30,8 @@ export default async function OrderHistoryPage({ searchParams }: PageProps) {
       search: params?.search,
       category: params?.category,
       status,
-      date: params?.date
+      date: params?.date,
+      limit: 90
     }),
     getProductCategories(),
     getStoreSettings()

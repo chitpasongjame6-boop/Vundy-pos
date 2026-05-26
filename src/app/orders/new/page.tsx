@@ -5,7 +5,7 @@ import { OrderForm } from "@/components/orders/order-form";
 
 export default async function NewOrderPage() {
   const [products, storeSettings] = await Promise.all([
-    getProducts({ activeOnly: true }),
+    getProducts({ activeOnly: true, limit: 200 }),
     getStoreSettings()
   ]);
 

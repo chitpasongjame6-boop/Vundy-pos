@@ -11,7 +11,7 @@ import { formatCurrency } from "@/lib/utils";
 
 export default async function PosPage() {
   const [products, storeSettings, paymentSummary, members] = await Promise.all([
-    getProducts({ activeOnly: true }),
+    getProducts({ activeOnly: true, limit: 200 }),
     getStoreSettings(),
     getTodayPosPaymentSummary(),
     getActiveMembers()
