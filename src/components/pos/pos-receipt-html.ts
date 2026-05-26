@@ -72,7 +72,7 @@ export function buildPosReceiptHtml(
           }
           body {
             font-size: ${baseFontSize};
-            font-weight: 700;
+            font-weight: 500;
             line-height: 1.35;
           }
           .receipt {
@@ -81,17 +81,9 @@ export function buildPosReceiptHtml(
             padding: ${receiptPadding};
             background: #ffffff;
           }
-          .receipt,
-          .receipt * {
-            text-shadow:
-              0.16px 0 #000000,
-              -0.16px 0 #000000,
-              0 0.16px #000000,
-              0 -0.16px #000000;
-          }
           .header {
             text-align: center;
-            border-bottom: 2px solid #000000;
+            border-bottom: 1.5px solid #000000;
             padding-bottom: 7px;
           }
           .logo {
@@ -103,25 +95,25 @@ export function buildPosReceiptHtml(
           }
           h1 {
             font-size: ${titleFontSize};
-            font-weight: 800;
+            font-weight: 700;
             margin: 0;
             line-height: 1.18;
           }
           .subtitle {
             font-size: ${smallFontSize};
-            font-weight: 800;
+            font-weight: 600;
             margin-top: 3px;
             line-height: 1.25;
           }
           .meta {
             font-size: ${smallFontSize};
-            font-weight: 700;
+            font-weight: 500;
             margin-top: 4px;
             line-height: 1.25;
           }
           .items {
             padding: 8px 0;
-            border-bottom: 2px solid #000000;
+            border-bottom: 1.5px solid #000000;
           }
           .item {
             margin-bottom: 8px;
@@ -131,7 +123,7 @@ export function buildPosReceiptHtml(
           }
           .name {
             font-size: ${itemFontSize};
-            font-weight: 800;
+            font-weight: 700;
             line-height: 1.3;
           }
           .line {
@@ -139,27 +131,27 @@ export function buildPosReceiptHtml(
             justify-content: space-between;
             gap: 8px;
             font-size: ${baseFontSize};
-            font-weight: 700;
+            font-weight: 500;
             line-height: 1.45;
           }
           .line strong {
-            font-weight: 800;
+            font-weight: 700;
           }
           .totals {
             padding-top: 8px;
           }
           .total {
-            border-top: 2px solid #000000;
+            border-top: 1.5px solid #000000;
             margin-top: 5px;
             padding-top: 5px;
             font-size: ${totalFontSize};
-            font-weight: 900;
+            font-weight: 700;
           }
           .thanks {
             margin-top: 11px;
             text-align: center;
             font-size: ${baseFontSize};
-            font-weight: 800;
+            font-weight: 600;
           }
           @media screen {
             body { padding: 10px; }
@@ -170,8 +162,6 @@ export function buildPosReceiptHtml(
             body { padding: 0; }
             .receipt {
               border: 0;
-              filter: contrast(180%);
-              -webkit-text-stroke: 0.12px #000000;
             }
           }
         </style>
