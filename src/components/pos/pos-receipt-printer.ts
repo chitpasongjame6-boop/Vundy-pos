@@ -179,10 +179,20 @@ function printWhenReady(printWindow: Window) {
     printWindow.print();
   };
 
-  const ready = Promise.all([waitForFonts(printWindow), waitForImages(printWindow)]);
+  const ready = withTimeout(
+    Promise.all([waitForFonts(printWindow), waitForImages(printWindow)]),
+    900
+  );
 
   void ready.finally(printOnce);
-  window.setTimeout(printOnce, 2000);
+  window.setTimeout(printOnce, 1000);
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
+  return Promise.race([
+    promise,
+    new Promise<void>((resolve) => window.setTimeout(resolve, timeoutMs))
+  ]);
 }
 
 function waitForFonts(printWindow: Window) {

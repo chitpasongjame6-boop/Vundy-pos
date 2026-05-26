@@ -372,6 +372,9 @@ export async function createPosSale(input: PosSaleInput): Promise<PosSaleResult>
   const paymentMethod = parseSalePaymentMethod(input.paymentMethod);
   const receivedAmount = Math.max(0, Math.round(Number(input.receivedAmount ?? 0)));
   const currentUser = await getCurrentUser();
+  const requestedProductIds = [
+    ...new Set(requestedItems.map((item) => item.productId))
+  ];
 
   if (!requestedItems.length) {
     return { ok: false, message: "ກະລຸນາສະແກນ ຫຼືເລືອກສິນຄ້າກ່ອນ" };
@@ -379,7 +382,9 @@ export async function createPosSale(input: PosSaleInput): Promise<PosSaleResult>
 
   if (!hasDatabase) {
     const store = await readLocalStore();
-    const memberSnapshot = buildMemberSnapshot(input.memberId, store);
+    const memberSnapshot = input.memberId
+      ? buildMemberSnapshot(input.memberId, store)
+      : emptyMemberSnapshot();
     const build = buildSaleFromProducts(store.products, requestedItems, {
       discount,
       paymentMethod,
@@ -409,16 +414,35 @@ export async function createPosSale(input: PosSaleInput): Promise<PosSaleResult>
       products: applyStockChanges(current.products, requestedItems, now)
     }));
 
-    revalidatePosPaths();
+    revalidatePosSalePaths();
 
     return { ok: true, message: "ບັນທຶກການຂາຍສໍາເລັດ", sale };
   }
 
   const products = (await prisma.product.findMany({
-    where: { isActive: true }
+    where: {
+      id: { in: requestedProductIds },
+      isActive: true
+    },
+    select: {
+      id: true,
+      name: true,
+      sku: true,
+      category: true,
+      costPrice: true,
+      sellPrice: true,
+      stock: true,
+      lowStockAlert: true,
+      imageUrl: true,
+      isActive: true,
+      variants: true,
+      createdAt: true,
+      updatedAt: true
+    }
   })) as unknown as Product[];
-  const memberStore = await readLocalStore();
-  const memberSnapshot = buildMemberSnapshot(input.memberId, memberStore);
+  const memberSnapshot = input.memberId
+    ? buildMemberSnapshot(input.memberId, await readLocalStore())
+    : emptyMemberSnapshot();
   const build = buildSaleFromProducts(products, requestedItems, {
     discount,
     paymentMethod,
@@ -454,45 +478,52 @@ export async function createPosSale(input: PosSaleInput): Promise<PosSaleResult>
     }
   })) as unknown as Sale;
 
-  for (const item of requestedItems) {
-    const product = products.find((current) => current.id === item.productId);
+  await Promise.all(
+    products.map(async (product) => {
+      const changes = requestedItems.filter((item) => item.productId === product.id);
 
-    if (!product) {
-      continue;
-    }
-
-    const variants = getProductVariants(product).map((variant) =>
-      variant.id === item.variantId
-        ? { ...variant, stock: variant.stock - item.quantity }
-        : variant
-    );
-
-    await prisma.product.update({
-      where: { id: product.id },
-      data: {
-        variants,
-        stock: variants.reduce((sum, variant) => sum + variant.stock, 0)
+      if (!changes.length) {
+        return;
       }
-    });
-  }
 
-  revalidatePosPaths();
+      const variants = getProductVariants(product).map((variant) => {
+        const change = changes.find((item) => item.variantId === variant.id);
+
+        return change
+          ? { ...variant, stock: variant.stock - change.quantity }
+          : variant;
+      });
+
+      await prisma.product.update({
+        where: { id: product.id },
+        data: {
+          variants,
+          stock: variants.reduce((sum, variant) => sum + variant.stock, 0)
+        }
+      });
+    })
+  );
+
+  revalidatePosSalePaths();
 
   return { ok: true, message: "ບັນທຶກການຂາຍສໍາເລັດ", sale };
 }
 
-function buildMemberSnapshot(memberId: string | undefined, store: StoreSnapshot) {
-  const id = String(memberId ?? "").trim();
-  const emptySnapshot = {
+function emptyMemberSnapshot() {
+  return {
     memberId: null,
     memberName: null,
     memberPhone: null,
     memberTierName: null,
     memberDiscount: null
   };
+}
+
+function buildMemberSnapshot(memberId: string | undefined, store: StoreSnapshot) {
+  const id = String(memberId ?? "").trim();
 
   if (!id) {
-    return emptySnapshot;
+    return emptyMemberSnapshot();
   }
 
   const member = buildMemberSummaries(
@@ -502,7 +533,7 @@ function buildMemberSnapshot(memberId: string | undefined, store: StoreSnapshot)
   ).find((item) => item.id === id && item.isActive);
 
   if (!member) {
-    return emptySnapshot;
+    return emptyMemberSnapshot();
   }
 
   return {
@@ -726,4 +757,12 @@ function revalidatePosPaths() {
   revalidatePath("/sold-products");
   revalidatePath("/exports");
   revalidatePath("/members");
+}
+
+function revalidatePosSalePaths() {
+  revalidatePath("/pos");
+  revalidatePath("/pos/history");
+  revalidatePath("/products");
+  revalidatePath("/stock-alerts");
+  revalidatePath("/alerts");
 }
