@@ -1,7 +1,7 @@
 "use client";
 
 import type { Sale, SalePaymentMethod, StoreSettings } from "@/types";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatProductVariantName } from "@/lib/utils";
 
 export function buildPosReceiptHtml(
   sale: Sale,
@@ -183,7 +183,7 @@ export function buildPosReceiptHtml(
               .map(
                 (item) => `
                   <div class="item">
-                    <div class="name">${escapeHtml(item.name)}${item.variantName ? ` - ${escapeHtml(item.variantName)}` : ""}</div>
+                    <div class="name">${escapeHtml(formatProductVariantName(item.name, item.variantName))}</div>
                     <div class="line"><span>${item.quantity} x ${formatCurrency(item.price)}</span><span>${formatCurrency(item.price * item.quantity)}</span></div>
                   </div>
                 `

@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { getProductVariants } from "@/lib/utils";
+import { formatProductVariantName, getProductVariants } from "@/lib/utils";
 
 export default async function StockAlertsPage() {
   const products = await getProducts({ activeOnly: false });
@@ -49,7 +49,7 @@ export default async function StockAlertsPage() {
                     <div className="min-w-0 flex-1">
                       <p className="font-bold text-zinc-950">{product.name}</p>
                       <p className="text-sm text-zinc-500">
-                        {variant.name} · SKU: {variant.sku}
+                        {formatProductVariantName(product.name, variant.name)} · SKU: {variant.sku}
                       </p>
                     </div>
                     <Badge

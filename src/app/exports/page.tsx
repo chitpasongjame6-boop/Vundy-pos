@@ -7,7 +7,14 @@ import { getStoreSettings } from "@/actions/settings.action";
 import { ExportPrintButton } from "@/components/exports/export-print-button";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
-import { formatCurrency, formatDate, getProductVariants, statusConfig } from "@/lib/utils";
+import {
+  formatCurrency,
+  formatDate,
+  formatProductVariantName,
+  getProductVariants,
+  isDefaultVariantName,
+  statusConfig
+} from "@/lib/utils";
 
 export default async function ExportsPage() {
   const [products, orders, sales, closings, settings, members] = await Promise.all([
@@ -107,7 +114,7 @@ export default async function ExportsPage() {
                     <td>{variant.sku}</td>
                     <td>{product.name}</td>
                     <td>{product.category}</td>
-                    <td>{variant.name}</td>
+                    <td>{isDefaultVariantName(variant.name) ? "-" : variant.name}</td>
                     <td>{formatCurrency(variant.costPrice)}</td>
                     <td>{formatCurrency(variant.sellPrice)}</td>
                     <td>{variant.stock}</td>
@@ -145,7 +152,7 @@ export default async function ExportsPage() {
                   <td>{statusConfig[order.status].label}</td>
                   <td>
                     {order.items
-                      .map((item) => `${item.name}${item.variantName ? ` - ${item.variantName}` : ""} x${item.quantity}`)
+                      .map((item) => `${formatProductVariantName(item.name, item.variantName)} x${item.quantity}`)
                       .join(", ")}
                   </td>
                   <td>{formatCurrency(order.totalAmount)}</td>
@@ -184,7 +191,7 @@ export default async function ExportsPage() {
                   </td>
                   <td>
                     {sale.items
-                      .map((item) => `${item.name}${item.variantName ? ` - ${item.variantName}` : ""} x${item.quantity}`)
+                      .map((item) => `${formatProductVariantName(item.name, item.variantName)} x${item.quantity}`)
                       .join(", ")}
                   </td>
                   <td>{formatCurrency(sale.netAmount)}</td>

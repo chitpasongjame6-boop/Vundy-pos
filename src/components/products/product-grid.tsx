@@ -21,7 +21,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/input";
 import { MoneyInput } from "@/components/ui/money-input";
-import { cn, formatCurrency, getProductSummary } from "@/lib/utils";
+import {
+  cn,
+  formatCurrency,
+  formatProductVariantName,
+  getProductSummary
+} from "@/lib/utils";
 
 export function ProductFilters({
   categories,
@@ -260,7 +265,9 @@ function ProductDetailDialog({
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="font-bold text-zinc-950">{variant.name}</p>
+                        <p className="font-bold text-zinc-950">
+                          {formatProductVariantName(product.name, variant.name)}
+                        </p>
                         <p className="text-sm text-zinc-500">
                           {variant.sku}
                           {variant.unit ? ` · ${variant.unit}` : ""}

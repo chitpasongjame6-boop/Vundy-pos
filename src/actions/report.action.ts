@@ -3,6 +3,7 @@
 import { getOrders } from "@/actions/order.action";
 import { getSales } from "@/actions/pos.action";
 import { formatDateInput } from "@/lib/document-number";
+import { formatProductVariantName } from "@/lib/utils";
 import type { Order, Sale, SalePaymentMethod } from "@/types";
 
 export type ReportPeriod = "DAY" | "MONTH";
@@ -131,7 +132,7 @@ function buildTopProducts(orders: Order[], sales: Sale[]) {
     (item) => {
       const key = `${item.productId}-${item.variantId ?? item.sku}`;
       const current = map.get(key) ?? {
-        name: item.variantName ? `${item.name} - ${item.variantName}` : item.name,
+        name: formatProductVariantName(item.name, item.variantName),
         sku: item.sku,
         quantity: 0,
         amount: 0

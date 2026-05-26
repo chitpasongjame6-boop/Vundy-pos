@@ -24,7 +24,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/input";
 import { MoneyInput } from "@/components/ui/money-input";
 import { resolvePublicAssetUrl } from "@/lib/asset-url";
-import { formatCurrency, getProductVariants } from "@/lib/utils";
+import {
+  formatCurrency,
+  formatProductVariantName,
+  getProductVariants
+} from "@/lib/utils";
 
 type ProductOption = {
   key: string;
@@ -32,6 +36,7 @@ type ProductOption = {
   variantId: string;
   productName: string;
   variantName: string;
+  displayName: string;
   sku: string;
   category: string;
   price: number;
@@ -61,6 +66,7 @@ export function PosTerminal({
           variantId: variant.id,
           productName: product.name,
           variantName: variant.name,
+          displayName: formatProductVariantName(product.name, variant.name),
           sku: variant.sku,
           category: product.category,
           price: variant.sellPrice,
@@ -104,7 +110,7 @@ export function PosTerminal({
 
       if (option.stock <= 0) {
         setMessage(
-          `${option.productName} - ${option.variantName} ສິນຄ້າໝົດສະຕ໋ອກ`
+          `${option.displayName} ສິນຄ້າໝົດສະຕ໋ອກ`
         );
         return current;
       }
@@ -276,14 +282,14 @@ export function PosTerminal({
                 <option value="">ເລືອກແລ້ວເພີ່ມອັດຕະໂນມັດ</option>
                 {options.map((option) => (
                   <option key={option.key} value={option.key}>
-                    {option.productName} - {option.variantName} ({option.sku}) ·{" "}
+                    {option.displayName} ({option.sku}) ·{" "}
                     {option.stock <= 0 ? "ໝົດສະຕ໋ອກ" : `ສະຕ໋ອກ ${option.stock}`}
                   </option>
                 ))}
               </Select>
               {selectedOutOfStock ? (
                 <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700">
-                  {selectedOption?.productName} - {selectedOption?.variantName} ໝົດສະຕ໋ອກ
+                  {selectedOption?.displayName} ໝົດສະຕ໋ອກ
                   ບໍ່ສາມາດເພີ່ມໃສ່ບິນໄດ້
                 </p>
               ) : null}
@@ -321,7 +327,7 @@ export function PosTerminal({
                 >
                   <div className="min-w-0">
                     <p className="font-bold text-zinc-950">
-                      {item.productName} - {item.variantName}
+                      {item.displayName}
                     </p>
                     <p className="text-sm text-zinc-500">
                       {item.sku} · {formatCurrency(item.price)} · ສະຕ໋ອກ{" "}
@@ -597,7 +603,7 @@ function getPosReceiptHtml(
               .map(
                 (item) => `
                   <div class="item">
-                    <div class="name">${escapeHtml(item.name)}${item.variantName ? ` - ${escapeHtml(item.variantName)}` : ""}</div>
+                    <div class="name">${escapeHtml(formatProductVariantName(item.name, item.variantName))}</div>
                     <div class="line"><span>${item.quantity} x ${formatCurrency(item.price)}</span><span>${formatCurrency(item.price * item.quantity)}</span></div>
                   </div>
                 `

@@ -14,7 +14,11 @@ import type { Product } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input, Select, Textarea } from "@/components/ui/input";
-import { formatCurrency, getProductVariants } from "@/lib/utils";
+import {
+  formatCurrency,
+  formatProductVariantName,
+  getProductVariants
+} from "@/lib/utils";
 
 const fieldClass = "space-y-1.5";
 const labelClass = "text-sm font-semibold text-zinc-700";
@@ -25,6 +29,7 @@ type ProductOption = {
   variantId: string;
   productName: string;
   variantName: string;
+  displayName: string;
   sku: string;
   stock: number;
   price: number;
@@ -46,18 +51,23 @@ export function OrderForm({
   const productOptions = useMemo<ProductOption[]>(
     () =>
       products.flatMap((product) =>
-        getProductVariants(product).map((variant) => ({
-          key: `${product.id}::${variant.id}`,
-          productId: product.id,
-          variantId: variant.id,
-          productName: product.name,
-          variantName: variant.name,
-          sku: variant.sku,
-          stock: variant.stock,
-          price: variant.sellPrice,
-          cost: variant.costPrice,
-          label: `${product.name} - ${variant.name} (${variant.sku}) - ${formatCurrency(variant.sellPrice)} · ສະຕ໋ອກ ${variant.stock}`
-        }))
+        getProductVariants(product).map((variant) => {
+          const displayName = formatProductVariantName(product.name, variant.name);
+
+          return {
+            key: `${product.id}::${variant.id}`,
+            productId: product.id,
+            variantId: variant.id,
+            productName: product.name,
+            variantName: variant.name,
+            displayName,
+            sku: variant.sku,
+            stock: variant.stock,
+            price: variant.sellPrice,
+            cost: variant.costPrice,
+            label: `${displayName} (${variant.sku}) - ${formatCurrency(variant.sellPrice)} · ສະຕ໋ອກ ${variant.stock}`
+          };
+        })
       ),
     [products]
   );
@@ -110,7 +120,7 @@ export function OrderForm({
       setCart((current) => [...current, { ...option, quantity: nextQuantity }]);
     }
 
-    showMessage(`ເພີ່ມແລ້ວ: ${option.productName} - ${option.variantName}`, "success");
+    showMessage(`ເພີ່ມແລ້ວ: ${option.displayName}`, "success");
   }
 
   function selectAndAddProduct(productKey: string) {
@@ -323,7 +333,7 @@ export function OrderForm({
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="font-semibold text-zinc-950">
-                            {item.productName} - {item.variantName}
+                            {item.displayName}
                           </p>
                           <p className="text-xs text-zinc-500">
                             {item.sku} · {formatCurrency(item.price)} · ສະຕ໋ອກ {item.stock}

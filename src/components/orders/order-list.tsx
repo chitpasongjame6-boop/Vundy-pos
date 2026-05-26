@@ -24,7 +24,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { resolvePublicAssetUrl } from "@/lib/asset-url";
-import { cn, formatCurrency, formatDate, statusConfig } from "@/lib/utils";
+import {
+  cn,
+  formatCurrency,
+  formatDate,
+  formatProductVariantName,
+  statusConfig
+} from "@/lib/utils";
 
 export function OrderFilters({
   search,
@@ -176,8 +182,7 @@ export function OrderList({
                       />
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold text-zinc-950">
-                          {firstItem.name}
-                          {firstItem.variantName ? ` - ${firstItem.variantName}` : ""}
+                          {formatProductVariantName(firstItem.name, firstItem.variantName)}
                         </p>
                         <p className="mt-1 truncate text-sm text-zinc-500">
                           {firstItem.sku} · x{firstItem.quantity}
@@ -318,8 +323,7 @@ function OrderDetailsPanel({
                   />
                   <div className="min-w-0">
                     <p className="font-semibold text-zinc-950">
-                      {item.name}
-                      {item.variantName ? ` - ${item.variantName}` : ""}
+                      {formatProductVariantName(item.name, item.variantName)}
                     </p>
                     <p className="text-zinc-500">
                       {item.sku} · x{item.quantity}

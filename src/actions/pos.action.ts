@@ -6,7 +6,12 @@ import { readLocalStore, updateLocalStore } from "@/lib/local-store";
 import { buildClosingNumber, buildReadableNumber, formatDateInput } from "@/lib/document-number";
 import { getCurrentUser } from "@/lib/auth";
 import { buildMemberSummaries } from "@/lib/members";
-import { calculateOrderTotals, getProductVariants, productToOrderItem } from "@/lib/utils";
+import {
+  calculateOrderTotals,
+  formatProductVariantName,
+  getProductVariants,
+  productToOrderItem
+} from "@/lib/utils";
 import type {
   DailyClosing,
   PosPaymentSummary,
@@ -565,7 +570,7 @@ function buildSaleFromProducts(
     if (variant.stock < requested.quantity) {
       return {
         ok: false,
-        message: `ສະຕ໋ອກ ${product.name} - ${variant.name} ບໍ່ພໍ`
+        message: `ສະຕ໋ອກ ${formatProductVariantName(product.name, variant.name)} ບໍ່ພໍ`
       };
     }
 

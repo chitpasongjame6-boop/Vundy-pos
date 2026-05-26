@@ -6,7 +6,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/input";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import {
+  formatCurrency,
+  formatDate,
+  isDefaultVariantName
+} from "@/lib/utils";
 import type { DashboardChannel } from "@/types";
 
 const channelLabels: Record<DashboardChannel, string> = {
@@ -125,7 +129,7 @@ export default async function SoldProductsPage({
                       <p className="truncate font-bold text-zinc-950">
                         {item.name}
                       </p>
-                      {item.variantName ? (
+                      {item.variantName && !isDefaultVariantName(item.variantName) ? (
                         <p className="truncate text-sm text-zinc-500">
                           {item.variantName}
                         </p>

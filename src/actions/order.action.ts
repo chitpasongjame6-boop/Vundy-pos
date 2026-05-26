@@ -5,7 +5,12 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { readLocalStore, updateLocalStore } from "@/lib/local-store";
 import { buildReadableNumber } from "@/lib/document-number";
-import { calculateOrderTotals, getProductVariants, productToOrderItem } from "@/lib/utils";
+import {
+  calculateOrderTotals,
+  formatProductVariantName,
+  getProductVariants,
+  productToOrderItem
+} from "@/lib/utils";
 import type { Order, OrderItem, OrderStatus, PaymentStatus, Product } from "@/types";
 
 const hasDatabase = Boolean(process.env.DATABASE_URL);
@@ -381,7 +386,7 @@ function buildOrderItemsFromProducts(
     if (variant.stock < requested.quantity) {
       return {
         ok: false,
-        message: `ສະຕ໋ອກ ${product.name} - ${variant.name} ບໍ່ພໍ`
+        message: `ສະຕ໋ອກ ${formatProductVariantName(product.name, variant.name)} ບໍ່ພໍ`
       };
     }
 

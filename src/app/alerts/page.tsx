@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import {
   formatCurrency,
   formatDate,
+  formatProductVariantName,
   getProductVariants,
   statusConfig
 } from "@/lib/utils";
@@ -120,7 +121,7 @@ export default async function AlertsPage() {
                       </Badge>
                     </div>
                     <p className="text-sm text-zinc-500">
-                      {variant.name} · SKU: {variant.sku}
+                      {formatProductVariantName(product.name, variant.name)} · SKU: {variant.sku}
                     </p>
                     <p className="mt-1 text-sm font-semibold text-zinc-950">
                       ສະຕ໋ອກ {variant.stock} / ແຈ້ງເຕືອນ {variant.lowStockAlert}

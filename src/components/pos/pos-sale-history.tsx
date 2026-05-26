@@ -10,7 +10,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, Textarea } from "@/components/ui/input";
 import { printPosReceiptCopy } from "@/components/pos/pos-receipt-printer";
-import { cn, formatCurrency, formatDate } from "@/lib/utils";
+import {
+  cn,
+  formatCurrency,
+  formatDate,
+  formatProductVariantName
+} from "@/lib/utils";
 
 export function PosSaleHistory({
   sales,
@@ -72,10 +77,10 @@ export function PosSaleHistory({
                     />
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-zinc-950">
-                        {sale.items[0].name}
-                        {sale.items[0].variantName
-                          ? ` - ${sale.items[0].variantName}`
-                          : ""}
+                        {formatProductVariantName(
+                          sale.items[0].name,
+                          sale.items[0].variantName
+                        )}
                       </p>
                       <p className="mt-1 truncate text-sm text-zinc-500">
                         {sale.items.reduce((sum, item) => sum + item.quantity, 0)} ຊິ້ນ
@@ -242,8 +247,7 @@ function SaleDetail({
                   />
                   <div className="min-w-0">
                     <p className="font-semibold text-zinc-950">
-                      {item.name}
-                      {item.variantName ? ` - ${item.variantName}` : ""}
+                      {formatProductVariantName(item.name, item.variantName)}
                     </p>
                     <p className="text-zinc-500">
                       {item.sku} · x{item.quantity}

@@ -40,6 +40,23 @@ export function formatNumber(value: number) {
   return String(rounded).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
+export const DEFAULT_VARIANT_NAME = "\u0ea1\u0eb2\u0e94\u0e95\u0eb0\u0e96\u0eb2\u0e99";
+
+export function isDefaultVariantName(value?: string | null) {
+  return (value ?? "").trim() === DEFAULT_VARIANT_NAME;
+}
+
+export function formatProductVariantName(
+  productName: string,
+  variantName?: string | null
+) {
+  if (!variantName || isDefaultVariantName(variantName)) {
+    return productName;
+  }
+
+  return `${productName} - ${variantName}`;
+}
+
 export const statusConfig: Record<
   OrderStatus,
   { label: string; className: string; tone: string }
