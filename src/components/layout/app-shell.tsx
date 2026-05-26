@@ -84,9 +84,9 @@ export function AppShell({
       <aside className="hidden border-r border-zinc-200 bg-white lg:block">
         <div className="sticky top-0 flex h-screen min-h-0 flex-col gap-4 p-5">
           <div className="shrink-0">
-            <p className="text-xs font-semibold uppercase text-zinc-500">VL</p>
+            <p className="text-xs font-semibold uppercase text-zinc-500">VUNDY</p>
             <h1 className="text-xl font-bold tracking-normal text-zinc-950">
-              ສະຕ໋ອກ ແລະ ອໍເດີ
+              Vundy - POS
             </h1>
           </div>
           <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">

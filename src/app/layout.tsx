@@ -12,8 +12,8 @@ const notoSansLao = Noto_Sans_Lao({
 });
 
 export const metadata: Metadata = {
-  title: "VL ສະຕ໋ອກ ແລະ ອໍເດີ",
-  description: "ລະບົບຈັດການສະຕ໋ອກ ແລະ ອໍເດີຂອງ VL"
+  title: "Vundy - POS",
+  description: "Vundy - POS"
 };
 
 export default async function RootLayout({
