@@ -81,9 +81,17 @@ export function buildPosReceiptHtml(
             padding: ${receiptPadding};
             background: #ffffff;
           }
+          .receipt,
+          .receipt * {
+            text-shadow:
+              0.16px 0 #000000,
+              -0.16px 0 #000000,
+              0 0.16px #000000,
+              0 -0.16px #000000;
+          }
           .header {
             text-align: center;
-            border-bottom: 1.5px solid #000000;
+            border-bottom: 2px solid #000000;
             padding-bottom: 7px;
           }
           .logo {
@@ -113,7 +121,7 @@ export function buildPosReceiptHtml(
           }
           .items {
             padding: 8px 0;
-            border-bottom: 1.5px solid #000000;
+            border-bottom: 2px solid #000000;
           }
           .item {
             margin-bottom: 8px;
@@ -141,7 +149,7 @@ export function buildPosReceiptHtml(
             padding-top: 8px;
           }
           .total {
-            border-top: 1.5px solid #000000;
+            border-top: 2px solid #000000;
             margin-top: 5px;
             padding-top: 5px;
             font-size: ${totalFontSize};
@@ -160,8 +168,11 @@ export function buildPosReceiptHtml(
           @media print {
             html, body { width: ${paperWidth}; min-width: ${paperWidth}; }
             body { padding: 0; }
-            .receipt { border: 0; }
-            .receipt { -webkit-text-stroke: 0.08px #000000; }
+            .receipt {
+              border: 0;
+              filter: contrast(180%);
+              -webkit-text-stroke: 0.12px #000000;
+            }
           }
         </style>
       </head>
