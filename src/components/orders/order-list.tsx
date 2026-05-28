@@ -641,7 +641,7 @@ function getOrderBillHtml(
   logoUrl: string
 ) {
   const isA4 = storeSettings.orderBillSize === "A4";
-  const pageSize = isA4 ? "A4" : "100mm 150mm";
+  const pageSize = isA4 ? "A4" : "100mm auto";
   const bodyWidth = isA4 ? "210mm" : "100mm";
   const billWidth = isA4 ? "100mm" : "100mm";
   const screenPadding = isA4 ? "24px" : "10px";
@@ -680,9 +680,9 @@ function getOrderBillHtml(
           }
           @page { size: ${pageSize}; margin: ${isA4 ? "12mm" : "0"}; }
           * { box-sizing: border-box; font-family: "Noto Sans Lao", Arial, sans-serif !important; }
-          html, body { width: ${bodyWidth}; margin: 0; overflow: hidden; font-family: "Noto Sans Lao", Arial, sans-serif !important; }
+          html, body { width: ${bodyWidth}; height: auto; margin: 0; overflow: visible; font-family: "Noto Sans Lao", Arial, sans-serif !important; }
           body { color: #09090b; background: #ffffff; }
-          .bill { width: ${billWidth}; overflow: hidden; border: 1px solid #18181b; background: #ffffff; ${isA4 ? "margin: 0 auto;" : ""} }
+          .bill { display: block; width: ${billWidth}; height: auto; overflow: hidden; border: 1px solid #18181b; background: #ffffff; ${isA4 ? "margin: 0 auto;" : ""} }
           .bill-meta { display: flex; justify-content: space-between; gap: 8px; padding: 5px 8px 0; font-size: 10px; line-height: 1.2; color: #52525b; }
           .bill-id { text-align: right; font-weight: 700; color: #27272a; }
           .header { padding: 6px 14px 12px; text-align: center; }
@@ -695,7 +695,7 @@ function getOrderBillHtml(
           .label { color: #71717a; }
           .cod { border-top: 1px solid #18181b; padding: 12px 14px; font-size: 20px; font-weight: 700; }
           @media screen { body { padding: ${screenPadding}; } }
-          @media print { * { font-family: "Noto Sans Lao", Arial, sans-serif !important; } html, body { width: ${bodyWidth}; } .bill { border-color: #000; } }
+          @media print { * { font-family: "Noto Sans Lao", Arial, sans-serif !important; } html, body { width: ${bodyWidth}; height: auto; overflow: visible; } .bill { height: auto; border-color: #000; } }
         </style>
       </head>
       <body>
