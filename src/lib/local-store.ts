@@ -31,11 +31,11 @@ const defaultStoreSettings: StoreSettings = {
   storeName: "VUNDY Beauty & Cosmetice",
   storeSubtitle: "",
   storeNote: "",
-  logoUrl: "/vundy-logo.jpeg",
+  logoUrl: "/vundy-logo.png",
   posReceiptName: "VUNDY Beauty & Cosmetice",
   posReceiptSubtitle: "",
   posReceiptNote: "",
-  posReceiptLogoUrl: "/vundy-logo.jpeg",
+  posReceiptLogoUrl: "/vundy-logo.png",
   orderBillSize: "LABEL_100X150",
   posReceiptSize: "POS_80MM",
   shippingCompanies: defaultShippingCompanies
