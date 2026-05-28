@@ -11,8 +11,8 @@ export function buildPosReceiptHtml(
   const isSmallReceipt = storeSettings.posReceiptSize === "POS_58MM";
   const paperWidth = isSmallReceipt ? "58mm" : "80mm";
   const receiptWidth = isSmallReceipt ? "48mm" : "72mm";
-  const logoWidth = isSmallReceipt ? "72px" : "104px";
-  const logoHeight = isSmallReceipt ? "40px" : "56px";
+  const logoWidth = isSmallReceipt ? "84px" : "128px";
+  const logoHeight = isSmallReceipt ? "48px" : "70px";
   const receiptPadding = isSmallReceipt ? "0 0 5px" : "0 0 6px";
   const baseFontSize = isSmallReceipt ? "12px" : "13.8px";
   const titleFontSize = isSmallReceipt ? "16px" : "19px";
