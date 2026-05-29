@@ -622,7 +622,7 @@ function getPosReceiptHtml(
                 : ""
             }
           </div>
-          <div class="thanks">ຂອບໃຈທີ່ອຸດໜູນ</div>
+          <div class="thanks">ຂອບໃຈທີ່ອຸດໜູນຮ້ານເຮົາ</div>
         </div>
       </body>
     </html>
