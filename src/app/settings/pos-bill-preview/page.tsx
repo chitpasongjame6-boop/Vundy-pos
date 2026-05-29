@@ -130,7 +130,7 @@ export default async function PosBillPreviewPage() {
             </div>
 
             <p className="mt-3 text-center text-xs font-bold">
-              ຂອບໃຈທີ່ອຸດໜູນ
+              ຂອບໃຈທີ່ອຸດໜູນຮ້ານເຮົາ
             </p>
           </div>
         </CardContent>
