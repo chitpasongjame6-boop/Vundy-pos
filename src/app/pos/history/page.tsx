@@ -7,7 +7,9 @@ import { PosSaleHistory } from "@/components/pos/pos-sale-history";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/input";
+import { getCurrentUser } from "@/lib/auth";
 import { formatCurrency } from "@/lib/utils";
+import type { Sale } from "@/types";
 
 export default async function PosHistoryPage({
   searchParams
@@ -19,21 +21,28 @@ export default async function PosHistoryPage({
   }>;
 }) {
   const params = await searchParams;
-  const [history, storeSettings] = await Promise.all([
+  const [history, storeSettings, currentUser] = await Promise.all([
     getPosSaleHistory({
       search: params?.search,
       paymentMethod: params?.paymentMethod,
       date: params?.date,
       limit: 100
     }),
-    getStoreSettings()
+    getStoreSettings(),
+    getCurrentUser()
   ]);
+  const canViewProfit = currentUser?.role === "OWNER";
+  const safeSales = canViewProfit ? history.sales : hideSaleCosts(history.sales);
 
   return (
     <section>
       <PageHeader
         title="ປະຫວັດບິນໜ້າຮ້ານ"
-        description="ຄົ້ນຫາບິນ POS ເບິ່ງລາຍການສິນຄ້າ ຍອດຂາຍ ກໍາໄລ ແລະປິ້ນບິນຊໍ້າ"
+        description={
+          canViewProfit
+            ? "ຄົ້ນຫາບິນ POS ເບິ່ງລາຍການສິນຄ້າ ຍອດຂາຍ ກໍາໄລ ແລະປິ້ນບິນຊໍ້າ"
+            : "ຄົ້ນຫາບິນ POS ເບິ່ງລາຍການສິນຄ້າ ຍອດຂາຍ ແລະປິ້ນບິນຊໍ້າ"
+        }
         actionHref="/pos"
         actionLabel="ຂາຍໜ້າຮ້ານ"
       />
@@ -86,17 +95,35 @@ export default async function PosHistoryPage({
           label={`ລວມ ${history.summary.billCount} ບິນ`}
           value={formatCurrency(history.summary.totalAmount)}
         />
-        <SummaryCard
-          icon={TrendingUp}
-          label="ກໍາໄລ"
-          value={formatCurrency(history.summary.profit)}
-          success
-        />
+        {canViewProfit ? (
+          <SummaryCard
+            icon={TrendingUp}
+            label="ກໍາໄລ"
+            value={formatCurrency(history.summary.profit)}
+            success
+          />
+        ) : null}
       </div>
 
-      <PosSaleHistory sales={history.sales} storeSettings={storeSettings} />
+      <PosSaleHistory
+        sales={safeSales}
+        storeSettings={storeSettings}
+        canViewProfit={canViewProfit}
+      />
     </section>
   );
+}
+
+function hideSaleCosts(sales: Sale[]): Sale[] {
+  return sales.map((sale) => ({
+    ...sale,
+    totalCost: 0,
+    profit: 0,
+    items: sale.items.map((item) => ({
+      ...item,
+      cost: 0
+    }))
+  }));
 }
 
 function SummaryCard({

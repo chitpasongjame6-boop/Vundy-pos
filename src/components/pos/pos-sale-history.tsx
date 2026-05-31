@@ -19,10 +19,12 @@ import {
 
 export function PosSaleHistory({
   sales,
-  storeSettings
+  storeSettings,
+  canViewProfit = true
 }: {
   sales: Sale[];
   storeSettings: StoreSettings;
+  canViewProfit?: boolean;
 }) {
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
   const selectedSale = sales.find((sale) => sale.id === selectedSaleId);
@@ -98,19 +100,26 @@ export function PosSaleHistory({
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-2 text-sm">
+              <div
+                className={cn(
+                  "grid gap-2 text-sm",
+                  canViewProfit ? "grid-cols-2" : "grid-cols-1"
+                )}
+              >
                 <div className="rounded-md bg-zinc-50 p-2">
                   <p className="text-xs text-zinc-500">ຍອດສຸດທິ</p>
                   <p className="font-bold text-zinc-950">
                     {formatCurrency(sale.netAmount)}
                   </p>
                 </div>
-                <div className="rounded-md bg-zinc-50 p-2">
-                  <p className="text-xs text-zinc-500">ກໍາໄລ</p>
-                  <p className="font-bold text-emerald-700">
-                    {formatCurrency(sale.profit)}
-                  </p>
-                </div>
+                {canViewProfit ? (
+                  <div className="rounded-md bg-zinc-50 p-2">
+                    <p className="text-xs text-zinc-500">ກໍາໄລ</p>
+                    <p className="font-bold text-emerald-700">
+                      {formatCurrency(sale.profit)}
+                    </p>
+                  </div>
+                ) : null}
               </div>
 
               <div className="grid grid-cols-2 gap-2">
@@ -171,7 +180,11 @@ export function PosSaleHistory({
               </Button>
             </div>
             <div className="max-h-[calc(88vh-76px)] overflow-y-auto p-4">
-              <SaleDetail sale={selectedSale} storeSettings={storeSettings} />
+              <SaleDetail
+                sale={selectedSale}
+                storeSettings={storeSettings}
+                canViewProfit={canViewProfit}
+              />
             </div>
           </div>
         </div>
@@ -182,10 +195,12 @@ export function PosSaleHistory({
 
 function SaleDetail({
   sale,
-  storeSettings
+  storeSettings,
+  canViewProfit
 }: {
   sale: Sale;
   storeSettings: StoreSettings;
+  canViewProfit: boolean;
 }) {
   return (
     <div className="grid gap-3 text-sm">
@@ -263,11 +278,18 @@ function SaleDetail({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 rounded-md bg-zinc-50 p-3 sm:grid-cols-4">
+      <div
+        className={cn(
+          "grid grid-cols-2 gap-2 rounded-md bg-zinc-50 p-3",
+          canViewProfit ? "sm:grid-cols-4" : "sm:grid-cols-3"
+        )}
+      >
         <Summary label="ຍອດລວມ" value={formatCurrency(sale.totalAmount)} />
         <Summary label="ສ່ວນຫຼຸດ" value={formatCurrency(sale.discount)} />
         <Summary label="ຍອດສຸດທິ" value={formatCurrency(sale.netAmount)} />
-        <Summary label="ກໍາໄລ" value={formatCurrency(sale.profit)} success />
+        {canViewProfit ? (
+          <Summary label="ກໍາໄລ" value={formatCurrency(sale.profit)} success />
+        ) : null}
       </div>
 
       {isActiveSale(sale) ? (

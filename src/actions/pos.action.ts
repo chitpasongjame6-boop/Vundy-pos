@@ -416,7 +416,11 @@ export async function createPosSale(input: PosSaleInput): Promise<PosSaleResult>
 
     revalidatePosSalePaths();
 
-    return { ok: true, message: "ບັນທຶກການຂາຍສໍາເລັດ", sale };
+    return {
+      ok: true,
+      message: "ບັນທຶກການຂາຍສໍາເລັດ",
+      sale: currentUser?.role === "STAFF" ? hideSaleCosts(sale) : sale
+    };
   }
 
   const products = (await prisma.product.findMany({
@@ -506,7 +510,23 @@ export async function createPosSale(input: PosSaleInput): Promise<PosSaleResult>
 
   revalidatePosSalePaths();
 
-  return { ok: true, message: "ບັນທຶກການຂາຍສໍາເລັດ", sale };
+  return {
+    ok: true,
+    message: "ບັນທຶກການຂາຍສໍາເລັດ",
+    sale: currentUser?.role === "STAFF" ? hideSaleCosts(sale) : sale
+  };
+}
+
+function hideSaleCosts(sale: Sale): Sale {
+  return {
+    ...sale,
+    totalCost: 0,
+    profit: 0,
+    items: sale.items.map((item) => ({
+      ...item,
+      cost: 0
+    }))
+  };
 }
 
 function emptyMemberSnapshot() {

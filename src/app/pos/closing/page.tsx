@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input, Textarea } from "@/components/ui/input";
 import { MoneyInput } from "@/components/ui/money-input";
+import { getCurrentUser } from "@/lib/auth";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 export default async function PosClosingPage({
@@ -14,7 +15,11 @@ export default async function PosClosingPage({
   searchParams?: Promise<{ date?: string }>;
 }) {
   const params = await searchParams;
-  const data = await getDailyClosing(params?.date);
+  const [data, currentUser] = await Promise.all([
+    getDailyClosing(params?.date),
+    getCurrentUser()
+  ]);
+  const canViewProfit = currentUser?.role === "OWNER";
 
   return (
     <section>
@@ -59,12 +64,14 @@ export default async function PosClosingPage({
           label={`ລວມ ${data.summary.billCount} ບິນ`}
           value={formatCurrency(data.summary.totalAmount)}
         />
-        <SummaryCard
-          icon={TrendingUp}
-          label="ກໍາໄລ"
-          value={formatCurrency(data.summary.profit)}
-          success
-        />
+        {canViewProfit ? (
+          <SummaryCard
+            icon={TrendingUp}
+            label="ກໍາໄລ"
+            value={formatCurrency(data.summary.profit)}
+            success
+          />
+        ) : null}
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1fr_24rem]">

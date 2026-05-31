@@ -7,15 +7,20 @@ import { getStoreSettings } from "@/actions/settings.action";
 import { PageHeader } from "@/components/layout/page-header";
 import { PosTerminal } from "@/components/pos/pos-terminal";
 import { Card, CardContent } from "@/components/ui/card";
+import { getCurrentUser } from "@/lib/auth";
 import { formatCurrency } from "@/lib/utils";
+import type { Product } from "@/types";
 
 export default async function PosPage() {
-  const [products, storeSettings, paymentSummary, members] = await Promise.all([
+  const [products, storeSettings, paymentSummary, members, currentUser] = await Promise.all([
     getProducts({ activeOnly: true, limit: 200 }),
     getStoreSettings(),
     getTodayPosPaymentSummary(),
-    getActiveMembers()
+    getActiveMembers(),
+    getCurrentUser()
   ]);
+  const safeProducts =
+    currentUser?.role === "STAFF" ? hideProductCosts(products) : products;
 
   return (
     <section>
@@ -47,9 +52,20 @@ export default async function PosPage() {
           value={formatCurrency(paymentSummary.totalAmount)}
         />
       </div>
-      <PosTerminal products={products} storeSettings={storeSettings} members={members} />
+      <PosTerminal products={safeProducts} storeSettings={storeSettings} members={members} />
     </section>
   );
+}
+
+function hideProductCosts(products: Product[]): Product[] {
+  return products.map((product) => ({
+    ...product,
+    costPrice: 0,
+    variants: product.variants?.map((variant) => ({
+      ...variant,
+      costPrice: 0
+    }))
+  }));
 }
 
 function PaymentSummaryCard({
