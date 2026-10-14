@@ -30,6 +30,20 @@ read_setting() {
   awk -F= -v key="$2" '$1 == key { value=substr($0,index($0,"=")+1); sub(/\r$/, "", value); print value; exit }' "$1"
 }
 
+print_access_urls() {
+  local config="$1" port bind address
+  port="$(read_setting "$config" APP_PORT)"
+  bind="$(read_setting "$config" BIND_ADDRESS)"
+  printf '\n[Vundy] Open on this computer: http://localhost:%s\n' "$port"
+  if [[ "$bind" == '0.0.0.0' ]]; then
+    while IFS= read -r address; do
+      [[ -n "$address" ]] || continue
+      printf '[Vundy] LAN address: http://%s:%s\n' "$address" "$port"
+    done < <(hostname -I 2>/dev/null | tr ' ' '\n' | awk '/^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)/ && /^[0-9.]+$/ { if (!seen[$0]++) print }')
+  fi
+  printf '%s\n' '[Vundy] 0.0.0.0 is a server listening address, NOT a browser URL.'
+}
+
 prepare_config() {
   local root="$1" bind_override="$2" port_override="$3"
   local config="$root/.env.linux.local" state="$root/.local-data/linux" bind port temp
@@ -189,7 +203,7 @@ main() {
     sleep 2
   done
   [[ "$health" == 'healthy' ]] || die 'The web app is not healthy yet. Inspect: sudo docker compose --env-file .env.linux.local -f compose.local.yml logs app'
-  log "Ready: http://localhost:$(read_setting "$config" APP_PORT)"
+  print_access_urls "$config"
   printf '%s\n' \
     'Login: usernames owner / staff. Passwords and owner PIN are in .env.linux.local (owner-readable only).' \
     'The app and MongoDB restart automatically on boot. MongoDB is NOT exposed on a host port.' \

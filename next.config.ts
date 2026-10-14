@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { networkInterfaces } from "node:os";
 
 type RemotePattern = {
   protocol: "http" | "https";
@@ -65,6 +66,18 @@ function buildImageRemotePatterns(): RemotePattern[] {
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Keep explicit browser-host redirects absolute. Otherwise the Proxy adapter
+  // can turn 0.0.0.0 -> localhost into a same-host relative redirect/loop.
+  skipProxyUrlNormalize: true,
+  // Dev-only assets may be loaded through this machine's LAN IP. Production
+  // Server Actions remain same-origin; never allow arbitrary origins with '*'.
+  allowedDevOrigins: [...new Set([
+    "127.0.0.1",
+    ...Object.values(networkInterfaces()).flatMap((addresses) =>
+      (addresses ?? []).filter((address) => address.family === "IPv4" && address.address !== "0.0.0.0")
+        .map((address) => address.address)
+    )
+  ])],
   experimental: {
     serverActions: {
       bodySizeLimit: "8mb"

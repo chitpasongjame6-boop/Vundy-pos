@@ -109,6 +109,25 @@ describe.skipIf(!hasBash)("local Linux installer configuration", () => {
     expect(prepare(folder).status).toBe(0);
     expect(settings(folder).UNTRUSTED).toBe('"$(exit 77)"');
   }, 30000);
+
+  it("prints a usable localhost URL and only private LAN IPs, never a 0.0.0.0 browser URL", () => {
+    const folder = fixture();
+    expect(prepare(folder, "0.0.0.0", "3001").status).toBe(0);
+    const config = join(folder, ".env.linux.local").replaceAll("\\", "/");
+    const show = () => spawnSync(bash, ["-c",
+      'source "$1"; hostname() { printf "%s\\n" "192.168.1.20 172.17.0.1 192.168.1.20 127.0.0.1 0.0.0.0 8.8.8.8 ::1"; }; print_access_urls "$2"',
+      "test", installer, config
+    ], { encoding: "utf8", timeout: 10000 });
+    const lan = show();
+    expect(lan.status, lan.stderr).toBe(0);
+    expect(lan.stdout).toContain("http://localhost:3001");
+    expect(lan.stdout).toContain("http://192.168.1.20:3001");
+    expect(lan.stdout).not.toContain("http://0.0.0.0");
+    expect(lan.stdout).not.toContain("http://8.8.8.8");
+    expect(lan.stdout.match(/http:\/\/192\.168\.1\.20:3001/g)).toHaveLength(1);
+    expect(prepare(folder, "127.0.0.1").status).toBe(0);
+    expect(show().stdout).not.toContain("LAN address:");
+  }, 30000);
 });
 
 const replicaSource = readFileSync(join(root, "scripts/linux/mongo-replica.js"), "utf8");

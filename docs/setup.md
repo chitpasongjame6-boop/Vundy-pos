@@ -46,6 +46,17 @@ Docker published ports อาจข้ามกฎ UFW ได้; ตัวต�
 การทดสอบ Web Serial/PWA บางอย่างอาจต้อง HTTPS หรือ localhost; การพิมพ์ผ่านหน้าต่าง Browser ยังใช้ได้
 ค่าผ่อนผัน cookie `VUNDY_LOCAL_HTTP=1` อยู่เฉพาะ Compose ชุดนี้ ค่าเริ่มต้น production ทั่วไปยังคง HTTPS-only
 
+### ถ้าพบ CORS หรือเปิดเว็บผ่าน 0.0.0.0
+
+`0.0.0.0` เป็นที่อยู่สำหรับให้ server รับการเชื่อมต่อ ไม่ใช่ URL สำหรับใช้งานเว็บ ให้เปิด `http://localhost:3000` บนเครื่อง Mint หรือ `http://IP-เครื่อง-Mint:3000` จากเครื่องอื่นในร้าน
+รุ่นนี้จะเปลี่ยนการเปิดหน้าผ่าน `0.0.0.0` ไป `localhost` โดยคงพอร์ตและหน้าที่เปิดไว้ ถ้าเบราว์เซอร์บล็อกก่อนคำขอถึง server จะ redirect ไม่ได้ ต้องเปิด URL ของ localhost เอง
+การ redirect ไปหน้า login รวมถึงหลังออกจากระบบจะคง Host/IP และพอร์ตที่ใช้เปิดเว็บ ไม่เปลี่ยนเป็นที่อยู่ภายใน Docker และไม่ส่งฟอร์ม POST จาก `0.0.0.0` ข้ามไปยัง localhost อัตโนมัติ
+
+หลังคัดลอกโค้ดรุ่นแก้ไขมาบน Mint ให้รัน `bash run.sh` แล้วเปิด URL ที่สคริปต์แสดง กด `Ctrl+Shift+R` และเข้าสู่ระบบใหม่ ค่ารหัสผ่าน ฐานข้อมูล และไฟล์ `.env.linux.local` เดิมยังคงอยู่
+สำหรับ `npm run dev` อนุญาต dev assets เฉพาะ localhost/loopback และ IPv4 ที่มีบนเครื่อง ไม่เปิด wildcard ให้ทุกเว็บ; ถ้า IP เปลี่ยนให้ restart dev server
+ไม่ได้ปิด CSRF ของ Server Actions หรือเพิ่ม `Access-Control-Allow-Origin: *` หากยังพบ CORS ให้ตรวจ URL ที่ถูกบล็อกกับข้อความเต็มใน Console และ log ของ app ก่อนแก้เพิ่มเติม
+สำหรับนักพัฒนา: หลัง build ทดสอบ HTTP redirects, login, logout และ CSRF ได้ด้วย `node scripts/linux/http-smoke.mjs` ซึ่งใช้ server ชั่วคราวเฉพาะ loopback, บัญชีทดสอบสุ่ม และไม่เชื่อมฐานข้อมูลจริง
+
 ### ย้ายข้อมูลเดิมและรูปภาพ
 
 ฐานข้อมูลในเครื่องเริ่มว่าง ไม่ได้ดึงข้อมูลจาก Atlas อัตโนมัติ
