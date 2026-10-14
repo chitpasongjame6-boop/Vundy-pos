@@ -7,7 +7,8 @@ import {
   encodeSession,
   getRoleHome,
   sessionCookieName,
-  sessionMaxAgeSeconds
+  sessionMaxAgeSeconds,
+  shouldUseSecureSessionCookie
 } from "@/lib/auth-config";
 import { verifyLogin } from "@/lib/auth";
 
@@ -24,7 +25,7 @@ export async function loginAction(formData: FormData): Promise<void> {
   const cookieStore = await cookies();
   cookieStore.set(sessionCookieName, await encodeSession(user), {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: shouldUseSecureSessionCookie(),
     sameSite: "lax",
     path: "/",
     maxAge: sessionMaxAgeSeconds

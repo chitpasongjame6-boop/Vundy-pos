@@ -1,0 +1,125 @@
+name: vundy-local
+
+x-app: &app
+  image: vundy-pos-local:latest
+  build:
+    context: .
+    args:
+      R2_PUBLIC_URL: ${R2_PUBLIC_URL:-}
+  environment:
+    NODE_ENV: production
+    TZ: Asia/Vientiane
+    # Explicit opt-in only for this private/local HTTP deployment.
+    VUNDY_LOCAL_HTTP: "1"
+    DATABASE_URL: mongodb://vundy_app:${MONGO_APP_PASSWORD:?Run install-linux.sh first}@mongo:27017/vundy_pos?authSource=vundy_pos&replicaSet=rs0
+    OWNER_USERNAME: ${OWNER_USERNAME:-owner}
+    OWNER_PASSWORD: ${OWNER_PASSWORD:?Run install-linux.sh first}
+    OWNER_APPROVAL_PIN: ${OWNER_APPROVAL_PIN:?Run install-linux.sh first}
+    OWNER_NAME: ${OWNER_NAME:-ເຈົ້າຂອງຮ້ານ}
+    STAFF_USERNAME: ${STAFF_USERNAME:-staff}
+    STAFF_PASSWORD: ${STAFF_PASSWORD:?Run install-linux.sh first}
+    STAFF_NAME: ${STAFF_NAME:-ພະນັກງານຂາຍ}
+    SESSION_SECRET: ${SESSION_SECRET:?Run install-linux.sh first}
+    R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+    R2_BUCKET_NAME: ${R2_BUCKET_NAME:-}
+    R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+    R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+    R2_PUBLIC_URL: ${R2_PUBLIC_URL:-}
+  init: true
+  stop_grace_period: 30s
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+services:
+  mongo-keyfile:
+    image: mongo:8.0
+    user: "0:0"
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["install -m 400 -o mongodb -g mongodb /run/secrets/mongo_key /keyfile/mongo-keyfile"]
+    secrets:
+      - mongo_key
+    volumes:
+      - mongo-keyfile:/keyfile
+
+  mongo:
+    image: mongo:8.0
+    restart: unless-stopped
+    stop_grace_period: 60s
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--keyFile", "/keyfile/mongo-keyfile"]
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: vundy_root
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?Run install-linux.sh first}
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD:?Run install-linux.sh first}
+    depends_on:
+      mongo-keyfile:
+        condition: service_completed_successfully
+    volumes:
+      - mongo-data:/data/db
+      - mongo-config:/data/configdb
+      - mongo-keyfile:/keyfile:ro
+      - ./scripts/linux/mongo-user.js:/docker-entrypoint-initdb.d/01-vundy-user.js:ro
+    # Deliberately no host port: only containers in this project can reach the DB.
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "const admin=db.getSiblingDB('admin'); admin.auth('vundy_root',process.env.MONGO_INITDB_ROOT_PASSWORD); quit(admin.hello().isWritablePrimary ? 0 : 1)"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  mongo-init:
+    image: mongo:8.0
+    restart: "no"
+    environment:
+      MONGO_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?Run install-linux.sh first}
+    depends_on:
+      mongo:
+        condition: service_started
+    entrypoint: ["mongosh", "--nodb", "--quiet", "/setup/mongo-replica.js"]
+    volumes:
+      - ./scripts/linux/mongo-replica.js:/setup/mongo-replica.js:ro
+
+  schema:
+    <<: *app
+    profiles: ["tools"]
+    restart: "no"
+    # Stop on unsafe schema changes; never use --accept-data-loss or --force-reset.
+    command: ["node", "node_modules/prisma/build/index.js", "db", "push", "--skip-generate"]
+
+  app:
+    <<: *app
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+      mongo-init:
+        condition: service_completed_successfully
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(async r=>{const h=await r.json();process.exit(r.ok&&h.ok&&h.mode==='database'?0:1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  mongo-data:
+  mongo-config:
+  mongo-keyfile:
+
+secrets:
+  mongo_key:
+    file: ./.local-data/linux/mongo-keyfile

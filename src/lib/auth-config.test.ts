@@ -4,6 +4,7 @@ import {
   decodeSession,
   encodeSession,
   sessionMaxAgeSeconds,
+  shouldUseSecureSessionCookie,
   type AppUser
 } from "./auth-config";
 
@@ -20,6 +21,32 @@ const staff: AppUser = {
   name: "Staff",
   role: "STAFF"
 };
+
+describe("local HTTP cookie opt-in", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("keeps HTTPS cookies enabled by default in production", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VUNDY_LOCAL_HTTP", "");
+    expect(shouldUseSecureSessionCookie()).toBe(true);
+  });
+
+  it("allows local production HTTP only with the exact opt-in flag", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VERCEL", "");
+    vi.stubEnv("VUNDY_LOCAL_HTTP", "1");
+    expect(shouldUseSecureSessionCookie()).toBe(false);
+    vi.stubEnv("VUNDY_LOCAL_HTTP", "true");
+    expect(shouldUseSecureSessionCookie()).toBe(true);
+  });
+
+  it("never disables secure production cookies on Vercel", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("VERCEL", "1");
+    vi.stubEnv("VUNDY_LOCAL_HTTP", "1");
+    expect(shouldUseSecureSessionCookie()).toBe(true);
+  });
+});
 
 describe("signed sessions", () => {
   beforeEach(() => {

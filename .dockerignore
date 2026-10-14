@@ -1,0 +1,16 @@
+# Whitelist source files: no host .env, database, Git history or node_modules in images.
+**
+!package.json
+!package-lock.json
+!tsconfig.json
+!next-env.d.ts
+!next.config.ts
+!postcss.config.mjs
+!eslint.config.mjs
+!proxy.ts
+!prisma/
+!prisma/**
+!public/
+!public/**
+!src/
+!src/**

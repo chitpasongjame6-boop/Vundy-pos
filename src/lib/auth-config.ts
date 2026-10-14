@@ -10,6 +10,12 @@ export type AppUser = {
 export const sessionCookieName = "vl_session";
 export const sessionMaxAgeSeconds = 60 * 60 * 12;
 
+export function shouldUseSecureSessionCookie() {
+  // Public deployments remain HTTPS-only. Local HTTP requires an explicit server setting.
+  return process.env.NODE_ENV === "production" &&
+    (process.env.VUNDY_LOCAL_HTTP !== "1" || Boolean(process.env.VERCEL));
+}
+
 export const staffAllowedRoutes = [
   "/pos",
   "/pos/history",
