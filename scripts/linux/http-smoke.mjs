@@ -97,9 +97,65 @@ async function main() {
     assert(!zeroPost.headers.location);
     console.log("PASS: form credentials are never replayed from 0.0.0.0 to another host.");
 
-    const logout = await request("/logout", "192.168.1.20:3001", { headers: { cookie: cookie.split(";")[0] } });
-    assert.equal(logout.headers.location, "http://192.168.1.20:3001/login");
-    console.log("PASS: logout preserves the browser IP/port too.");
+    const lanHost = "192.168.1.20:3001";
+    const sessionHeaders = { cookie: cookie.split(";")[0] };
+    for (const prefetchHeaders of [
+      {},
+      { "next-router-prefetch": "1" },
+      { rsc: "1", "next-router-prefetch": "1" },
+      { rsc: "1", "next-router-prefetch": "1", "next-router-segment-prefetch": "/_tree" }
+    ]) {
+      let path = "/logout";
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const result = await request(path, lanHost, { headers: { ...sessionHeaders, ...prefetchHeaders } });
+        assert.equal(result.status, 307);
+        assert(!result.headers["set-cookie"], "GET/prefetch must never clear the session");
+        const destination = new URL(result.headers.location, `http://${lanHost}`);
+        if (destination.pathname !== "/logout") {
+          assert.equal(destination.href, `http://${lanHost}/login`);
+          break;
+        }
+        // Next.js may first redirect RSC requests to the normalized _rsc hash.
+        assert(attempt < 2, "Prefetch redirect must reach the legacy GET handler");
+        path = destination.pathname + destination.search;
+      }
+    }
+    const head = await request("/logout", lanHost, { method: "HEAD", headers: sessionHeaders });
+    assert.equal(head.status, 307);
+    assert(!head.headers["set-cookie"]);
+    const stillSignedIn = await request("/login", lanHost, { headers: sessionHeaders });
+    assert.equal(stillSignedIn.headers.location, `http://${lanHost}/dashboard`);
+    console.log("PASS: GET, HEAD and production RSC prefetch preserve the authenticated session.");
+
+    // The not-found screen renders the real AppShell without querying shop data.
+    const shell = await request("/__auth_smoke_missing_page__", lanHost, { headers: sessionHeaders });
+    assert.equal(shell.status, 404);
+    assert(!shell.text.includes('href="/logout"'), "Logout must not be a prefetched link");
+    const logoutId = shell.text.match(/name="(\$ACTION_ID_[^"]+)"/);
+    assert(logoutId, "Rendered logout form must expose its Server Action identifier");
+    const logoutForm = new FormData();
+    logoutForm.set(logoutId[1], "");
+    const logoutPayload = new Request("http://localhost", { method: "POST", body: logoutForm });
+    const logoutBody = Buffer.from(await logoutPayload.arrayBuffer());
+    const logoutOptions = {
+      method: "POST", body: logoutBody, headers: {
+        ...sessionHeaders, origin: `http://${lanHost}`,
+        "content-type": logoutPayload.headers.get("content-type"), "content-length": logoutBody.length
+      }
+    };
+    const forbiddenLogout = await request("/dashboard", lanHost, {
+      ...logoutOptions, headers: { ...logoutOptions.headers, origin: "http://untrusted.example" }
+    });
+    assert(forbiddenLogout.status >= 400, "Cross-origin logout must be rejected");
+    assert(!forbiddenLogout.headers["set-cookie"]);
+    const logout = await request("/dashboard", lanHost, logoutOptions);
+    assert.equal(logout.status, 303);
+    assert.equal(logout.headers.location, "/login");
+    const deletedCookie = (logout.headers["set-cookie"] ?? []).find(value => value.startsWith("vl_session=;"));
+    assert(deletedCookie && /Expires=Thu, 01 Jan 1970/i.test(deletedCookie), "Explicit POST must expire the session cookie");
+    const signedOut = await request("/dashboard", lanHost);
+    assert.equal(signedOut.headers.location, `http://${lanHost}/login?next=%2Fdashboard`);
+    console.log("PASS: explicit logout form clears the cookie via POST; cross-origin logout is rejected.");
   } finally {
     const stopped = new Promise(resolve => server.once("exit", resolve));
     server.kill();

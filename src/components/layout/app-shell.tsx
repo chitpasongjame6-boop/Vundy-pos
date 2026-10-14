@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { staffAllowedRoutes, type AppUser } from "@/lib/auth-config";
+import { logoutAction } from "@/actions/auth.action";
 
 type NavItem = {
   href: string;
@@ -217,13 +218,15 @@ export function AppShell({
                 </p>
               </div>
             </div>
-            <Link
-              href="/logout"
-              className="mt-3 flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
-            >
-              <LogOut className="h-4 w-4" aria-hidden />
-              ອອກຈາກລະບົບ
-            </Link>
+            <form action={logoutAction} className="mt-3">
+              <button
+                type="submit"
+                className="flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
+              >
+                <LogOut className="h-4 w-4" aria-hidden />
+                ອອກຈາກລະບົບ
+              </button>
+            </form>
           </div>
         </div>
       </aside>
@@ -325,13 +328,15 @@ export function AppShell({
             </nav>
             <div className="border-t border-slate-200 p-4">
               <p className="mb-3 truncate text-sm font-bold text-slate-900">{currentUser?.name ?? "ຜູ້ໃຊ້ລະບົບ"}</p>
-              <Link
-                href="/logout"
-                className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-rose-50 text-sm font-bold text-rose-700"
-              >
-                <LogOut className="h-4 w-4" aria-hidden />
-                ອອກຈາກລະບົບ
-              </Link>
+              <form action={logoutAction}>
+                <button
+                  type="submit"
+                  className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-rose-50 text-sm font-bold text-rose-700"
+                >
+                  <LogOut className="h-4 w-4" aria-hidden />
+                  ອອກຈາກລະບົບ
+                </button>
+              </form>
             </div>
           </aside>
         </div>
