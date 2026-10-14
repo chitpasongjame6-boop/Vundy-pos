@@ -2,13 +2,19 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { readLocalStore, updateLocalStore } from "@/lib/local-store";
+import {
+  defaultStoreSettings,
+  readLocalStore,
+  updateLocalStore
+} from "@/lib/local-store";
 import { saveUploadedImage } from "@/lib/object-storage";
+import { requireAuthenticatedUser, requireOwner } from "@/lib/auth";
 import type { StoreSettings } from "@/types";
 
 const hasDatabase = Boolean(process.env.DATABASE_URL);
 
 export async function getCategories() {
+  await requireAuthenticatedUser();
   if (!hasDatabase) {
     const store = await readLocalStore();
 
@@ -27,6 +33,7 @@ export async function getCategories() {
 }
 
 export async function createCategory(formData: FormData): Promise<void> {
+  await requireOwner();
   const name = String(formData.get("name") ?? "").trim();
 
   if (!name) {
@@ -54,6 +61,7 @@ export async function createCategory(formData: FormData): Promise<void> {
 }
 
 export async function deleteCategory(formData: FormData): Promise<void> {
+  await requireOwner();
   const name = String(formData.get("name") ?? "").trim();
 
   if (!name) {
@@ -80,12 +88,27 @@ export async function deleteCategory(formData: FormData): Promise<void> {
 }
 
 export async function getStoreSettings(): Promise<StoreSettings> {
+  await requireAuthenticatedUser();
+
+  if (hasDatabase) {
+    const settings = await prisma.storeSettingsRecord.findUnique({
+      where: { id: "default" }
+    });
+
+    if (!settings) {
+      return { ...defaultStoreSettings };
+    }
+
+    return normalizeStoreSettings(settings);
+  }
+
   const store = await readLocalStore();
 
   return store.storeSettings;
 }
 
 export async function updateStoreSettings(formData: FormData): Promise<void> {
+  await requireOwner();
   const storeName =
     String(formData.get("storeName") ?? "").trim() ||
     "VUNDY Beauty & Cosmetice";
@@ -94,16 +117,13 @@ export async function updateStoreSettings(formData: FormData): Promise<void> {
   const current = await getStoreSettings();
   const uploadedLogo = await saveStoreLogo(formData.get("storeLogo"));
 
-  await updateLocalStore((store) => ({
-    ...store,
-    storeSettings: {
-      ...store.storeSettings,
-      storeName,
-      storeSubtitle,
-      storeNote,
-      logoUrl: uploadedLogo ?? current.logoUrl
-    }
-  }));
+  await saveStoreSettings({
+    ...current,
+    storeName,
+    storeSubtitle,
+    storeNote,
+    logoUrl: uploadedLogo ?? current.logoUrl
+  });
 
   revalidatePath("/settings");
   revalidatePath("/settings/bill-preview");
@@ -112,6 +132,7 @@ export async function updateStoreSettings(formData: FormData): Promise<void> {
 }
 
 export async function updatePosReceiptSettings(formData: FormData): Promise<void> {
+  await requireOwner();
   const posReceiptName =
     String(formData.get("posReceiptName") ?? "").trim() ||
     "VUNDY Beauty & Cosmetice";
@@ -120,35 +141,27 @@ export async function updatePosReceiptSettings(formData: FormData): Promise<void
   const current = await getStoreSettings();
   const uploadedLogo = await saveStoreLogo(formData.get("posReceiptLogo"));
 
-  await updateLocalStore((store) => ({
-    ...store,
-    storeSettings: {
-      ...store.storeSettings,
-      posReceiptName,
-      posReceiptSubtitle,
-      posReceiptNote,
-      posReceiptLogoUrl: uploadedLogo ?? current.posReceiptLogoUrl
-    }
-  }));
+  await saveStoreSettings({
+    ...current,
+    posReceiptName,
+    posReceiptSubtitle,
+    posReceiptNote,
+    posReceiptLogoUrl: uploadedLogo ?? current.posReceiptLogoUrl
+  });
 
   revalidatePath("/settings");
   revalidatePath("/pos");
 }
 
 export async function updateBillSizeSettings(formData: FormData): Promise<void> {
+  await requireOwner();
   const orderBillSize =
     formData.get("orderBillSize") === "A4" ? "A4" : "LABEL_100X150";
   const posReceiptSize =
     formData.get("posReceiptSize") === "POS_58MM" ? "POS_58MM" : "POS_80MM";
+  const current = await getStoreSettings();
 
-  await updateLocalStore((store) => ({
-    ...store,
-    storeSettings: {
-      ...store.storeSettings,
-      orderBillSize,
-      posReceiptSize
-    }
-  }));
+  await saveStoreSettings({ ...current, orderBillSize, posReceiptSize });
 
   revalidatePath("/settings");
   revalidatePath("/settings/bill-preview");
@@ -159,72 +172,88 @@ export async function updateBillSizeSettings(formData: FormData): Promise<void> 
   revalidatePath("/pos/history");
 }
 
+export async function updatePosOperationsSettings(formData: FormData): Promise<void> {
+  await requireOwner();
+  const current = await getStoreSettings();
+  const taxRate = Math.min(100, Math.max(0, Math.round(Number(formData.get("taxRate") ?? 0))));
+
+  await saveStoreSettings({
+    ...current,
+    taxEnabled: formData.get("taxEnabled") === "on",
+    taxRate,
+    taxId: String(formData.get("taxId") ?? "").trim(),
+    receiptAddress: String(formData.get("receiptAddress") ?? "").trim(),
+    defaultBranchName: String(formData.get("defaultBranchName") ?? "").trim(),
+    defaultRegisterName: String(formData.get("defaultRegisterName") ?? "").trim(),
+    staffMaxDiscountPercent: 0,
+    requireShiftForSale: formData.get("requireShiftForSale") === "on"
+  });
+
+  revalidatePath("/settings");
+  revalidatePath("/pos");
+  revalidatePath("/pos/history");
+  revalidatePath("/pos/shifts");
+}
+
 export async function createShippingCompany(formData: FormData): Promise<void> {
+  await requireOwner();
   const name = String(formData.get("name") ?? "").trim();
 
   if (!name) {
     return;
   }
+  const current = await getStoreSettings();
 
-  await updateLocalStore((store) => ({
-    ...store,
-    storeSettings: {
-      ...store.storeSettings,
-      shippingCompanies: [
-        ...new Set([...(store.storeSettings.shippingCompanies ?? []), name])
-      ]
-    }
-  }));
+  await saveStoreSettings({
+    ...current,
+    shippingCompanies: [...new Set([...(current.shippingCompanies ?? []), name])]
+  });
 
   revalidateShippingSettingsPaths();
 }
 
 export async function updateShippingCompany(formData: FormData): Promise<void> {
+  await requireOwner();
   const oldName = String(formData.get("oldName") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
 
   if (!oldName || !name) {
     return;
   }
+  const current = await getStoreSettings();
+  const nextCompanies = (current.shippingCompanies ?? []).map((company) =>
+    company === oldName ? name : company
+  );
 
-  await updateLocalStore((store) => {
-    const nextCompanies = (store.storeSettings.shippingCompanies ?? []).map(
-      (company) => (company === oldName ? name : company)
-    );
-
-    return {
-      ...store,
-      storeSettings: {
-        ...store.storeSettings,
-        shippingCompanies: [...new Set(nextCompanies)]
-      }
-    };
+  await saveStoreSettings({
+    ...current,
+    shippingCompanies: [...new Set(nextCompanies)]
   });
 
   revalidateShippingSettingsPaths();
 }
 
 export async function deleteShippingCompany(formData: FormData): Promise<void> {
+  await requireOwner();
   const name = String(formData.get("oldName") ?? formData.get("name") ?? "").trim();
 
   if (!name) {
     return;
   }
+  const current = await getStoreSettings();
 
-  await updateLocalStore((store) => ({
-    ...store,
-    storeSettings: {
-      ...store.storeSettings,
-      shippingCompanies: (store.storeSettings.shippingCompanies ?? []).filter(
-        (company) => company !== name
-      )
-    }
-  }));
+  await saveStoreSettings({
+    ...current,
+    shippingCompanies: (current.shippingCompanies ?? []).filter(
+      (company) => company !== name
+    )
+  });
 
   revalidateShippingSettingsPaths();
 }
 
 export async function clearAllBusinessData(formData: FormData): Promise<void> {
+  await requireOwner();
   const confirmText = String(formData.get("confirmText") ?? "").trim();
 
   if (confirmText !== "DELETE") {
@@ -232,10 +261,24 @@ export async function clearAllBusinessData(formData: FormData): Promise<void> {
   }
 
   if (hasDatabase) {
-    await prisma.order.deleteMany({});
-    await prisma.sale.deleteMany({});
-    await prisma.product.deleteMany({});
-    await prisma.category.deleteMany({});
+    await prisma.$transaction([
+      prisma.dailyClosing.deleteMany({}),
+      prisma.cashMovement.deleteMany({}),
+      prisma.cashShift.deleteMany({}),
+      prisma.saleReturn.deleteMany({}),
+      prisma.stockMovement.deleteMany({}),
+      prisma.auditLog.deleteMany({}),
+      prisma.expense.deleteMany({}),
+      prisma.purchaseOrder.deleteMany({}),
+      prisma.supplier.deleteMany({}),
+      prisma.register.deleteMany({}),
+      prisma.branch.deleteMany({}),
+      prisma.member.deleteMany({}),
+      prisma.order.deleteMany({}),
+      prisma.sale.deleteMany({}),
+      prisma.product.deleteMany({}),
+      prisma.category.deleteMany({})
+    ]);
   } else {
     await updateLocalStore((store) => ({
       ...store,
@@ -244,7 +287,17 @@ export async function clearAllBusinessData(formData: FormData): Promise<void> {
       sales: [],
       dailyClosings: [],
       members: [],
-      categories: []
+      categories: [],
+      cashShifts: [],
+      cashMovements: [],
+      saleReturns: [],
+      stockMovements: [],
+      auditLogs: [],
+      suppliers: [],
+      purchaseOrders: [],
+      branches: [],
+      registers: [],
+      expenses: []
     }));
   }
 
@@ -277,4 +330,64 @@ async function saveStoreLogo(value: FormDataEntryValue | null) {
     folder: "settings",
     fileNamePrefix: "store-logo"
   });
+}
+
+async function saveStoreSettings(settings: StoreSettings) {
+  if (hasDatabase) {
+    await prisma.storeSettingsRecord.upsert({
+      where: { id: "default" },
+      update: settings,
+      create: { id: "default", ...settings }
+    });
+    return;
+  }
+
+  await updateLocalStore((store) => ({
+    ...store,
+    storeSettings: settings
+  }));
+}
+
+function normalizeStoreSettings(settings: {
+  storeName: string;
+  storeSubtitle: string;
+  storeNote: string;
+  logoUrl: string | null;
+  posReceiptName: string;
+  posReceiptSubtitle: string;
+  posReceiptNote: string;
+  posReceiptLogoUrl: string | null;
+  orderBillSize: string;
+  posReceiptSize: string;
+  shippingCompanies: string[];
+  taxEnabled?: boolean | null;
+  taxRate?: number | null;
+  taxId?: string | null;
+  receiptAddress?: string | null;
+  defaultBranchName?: string | null;
+  defaultRegisterName?: string | null;
+  staffMaxDiscountPercent?: number | null;
+  requireShiftForSale?: boolean | null;
+}): StoreSettings {
+  return {
+    storeName: settings.storeName,
+    storeSubtitle: settings.storeSubtitle,
+    storeNote: settings.storeNote,
+    logoUrl: settings.logoUrl,
+    posReceiptName: settings.posReceiptName,
+    posReceiptSubtitle: settings.posReceiptSubtitle,
+    posReceiptNote: settings.posReceiptNote,
+    posReceiptLogoUrl: settings.posReceiptLogoUrl,
+    orderBillSize: settings.orderBillSize === "A4" ? "A4" : "LABEL_100X150",
+    posReceiptSize: settings.posReceiptSize === "POS_58MM" ? "POS_58MM" : "POS_80MM",
+    shippingCompanies: settings.shippingCompanies,
+    taxEnabled: settings.taxEnabled ?? false,
+    taxRate: settings.taxRate ?? 0,
+    taxId: settings.taxId ?? "",
+    receiptAddress: settings.receiptAddress ?? "",
+    defaultBranchName: settings.defaultBranchName ?? "",
+    defaultRegisterName: settings.defaultRegisterName ?? "",
+    staffMaxDiscountPercent: settings.staffMaxDiscountPercent ?? 0,
+    requireShiftForSale: settings.requireShiftForSale ?? false
+  };
 }

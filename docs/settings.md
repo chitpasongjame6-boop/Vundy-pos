@@ -42,6 +42,7 @@
 - fields: `posReceiptName`, `posReceiptSubtitle`, `posReceiptNote`, `posReceiptLogoUrl`
 - ໃບບິນ POS ໃນ `/pos` ຈະໃຊ້ຂໍ້ມູນຊຸດນີ້ເທົ່ານັ້ນ
 - ການແກ້ໄຂບິນ POS ບໍ່ກະທົບໃບບິນຂົນສົ່ງຂອງອໍເດີອອນລາຍ
+- ຖ້າມີ `DATABASE_URL` ຂໍ້ມູນຮ້ານ, ຂະໜາດບິນ ແລະບໍລິສັດຂົນສົ່ງຈະເກັບໃນ `store_settings`
 
 ## ຂໍ້ມູນຕັ້ງຄ່າປັດຈຸບັນ
 
@@ -60,14 +61,7 @@
 
 - ຕ້ອງພິມ `DELETE` ໃນຊ່ອງຢືນຢັນກ່ອນກົດລຶບ
 - action ທີ່ໃຊ້: `clearAllBusinessData`
-- ຂໍ້ມູນທີ່ລຶບ: ສິນຄ້າ, ອໍເດີ, ຍອດຂາຍໜ້າຮ້ານ, ໝວດໝູ່ສິນຄ້າ
+- ຂໍ້ມູນທີ່ລຶບ: ສິນຄ້າ, ອໍເດີ, ຍອດຂາຍໜ້າຮ້ານ, ປິດຍອດ, ສະມາຊິກ, ໝວດໝູ່ສິນຄ້າ
 - ຂໍ້ມູນທີ່ເກັບໄວ້: ຊື່ຮ້ານ, ຂໍ້ມູນໃບບິນ, ໂລໂກ້
-- ຖ້າມີ `DATABASE_URL` ຈະລຶບຈາກ MongoDB collections `orders`, `sales`, `products`, `categories`
+- ຖ້າມີ `DATABASE_URL` ຈະລຶບຈາກ MongoDB collections `orders`, `sales`, `daily_closings`, `members`, `products`, `categories`
 - ຖ້າບໍ່ມີ `DATABASE_URL` ຈະລຶບຈາກ `.local-data/stock-order-store.json`
-
-## ວຽກຕໍ່
-
-- ຍ້າຍບໍລິສັດຂົນສົ່ງໄປເກັບໃນຖານຂໍ້ມູນ
-- ເຮັດໜ້າຈໍເພີ່ມ ແກ້ໄຂ ແລະ ປິດໃຊ້ງານບໍລິສັດຂົນສົ່ງ
-- ເຮັດ role permission ສໍາລັບຜູ້ໃຊ້
-- ເພີ່ມຂໍ້ມູນຮ້ານ ເຊັ່ນ ຊື່ຮ້ານ ເບີໂທ ທີ່ຢູ່ ແລະ ໂລໂກ້

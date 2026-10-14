@@ -6,7 +6,8 @@ import {
   canAccessPath,
   encodeSession,
   getRoleHome,
-  sessionCookieName
+  sessionCookieName,
+  sessionMaxAgeSeconds
 } from "@/lib/auth-config";
 import { verifyLogin } from "@/lib/auth";
 
@@ -21,11 +22,12 @@ export async function loginAction(formData: FormData): Promise<void> {
   }
 
   const cookieStore = await cookies();
-  cookieStore.set(sessionCookieName, encodeSession(user), {
+  cookieStore.set(sessionCookieName, await encodeSession(user), {
     httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    maxAge: 60 * 60 * 12
+    maxAge: sessionMaxAgeSeconds
   });
 
   if (nextPath && canAccessPath(user, nextPath)) {

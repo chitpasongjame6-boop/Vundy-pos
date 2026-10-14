@@ -1,12 +1,11 @@
-import type { ComponentType } from "react";
 import { Banknote, CreditCard, ReceiptText, Search, TrendingUp, Wallet } from "lucide-react";
 import { getPosSaleHistory } from "@/actions/pos.action";
 import { getStoreSettings } from "@/actions/settings.action";
 import { PageHeader } from "@/components/layout/page-header";
 import { PosSaleHistory } from "@/components/pos/pos-sale-history";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/input";
+import { FilterBar, MetricCard } from "@/components/ui/patterns";
 import { getCurrentUser } from "@/lib/auth";
 import { formatCurrency } from "@/lib/utils";
 import type { Sale } from "@/types";
@@ -47,9 +46,9 @@ export default async function PosHistoryPage({
         actionLabel="ຂາຍໜ້າຮ້ານ"
       />
 
-      <form className="mb-4 grid gap-3 md:grid-cols-[1fr_12rem_11rem_auto]">
+      <FilterBar className="md:grid-cols-[1fr_12rem_11rem_auto]">
         <label className="relative">
-          <Search className="pointer-events-none absolute left-3 top-3 h-5 w-5 text-zinc-400" />
+          <Search className="pointer-events-none absolute left-3 top-3 h-5 w-5 text-slate-400" />
           <Input
             name="search"
             defaultValue={params?.search ?? ""}
@@ -62,6 +61,7 @@ export default async function PosHistoryPage({
           <option value="CASH">ເງິນສົດ</option>
           <option value="TRANSFER">ເງິນໂອນ</option>
           <option value="OTHER">ອື່ນໆ</option>
+          <option value="SPLIT">ແບ່ງຈ່າຍ</option>
         </Select>
         <Input
           type="date"
@@ -72,35 +72,39 @@ export default async function PosHistoryPage({
         <Button type="submit" className="w-full md:w-auto">
           ຄົ້ນຫາ
         </Button>
-      </form>
+      </FilterBar>
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <SummaryCard
+      <div className={`mb-4 grid grid-cols-2 gap-3 ${canViewProfit ? "xl:grid-cols-5" : "xl:grid-cols-4"}`}>
+        <MetricCard
           icon={Banknote}
           label="ເງິນສົດ"
           value={formatCurrency(history.summary.cashAmount)}
+          tone="emerald"
         />
-        <SummaryCard
+        <MetricCard
           icon={CreditCard}
           label="ເງິນໂອນ"
           value={formatCurrency(history.summary.transferAmount)}
+          tone="sky"
         />
-        <SummaryCard
+        <MetricCard
           icon={Wallet}
           label="ອື່ນໆ"
           value={formatCurrency(history.summary.otherAmount)}
+          tone="amber"
         />
-        <SummaryCard
+        <MetricCard
           icon={ReceiptText}
           label={`ລວມ ${history.summary.billCount} ບິນ`}
           value={formatCurrency(history.summary.totalAmount)}
+          tone="indigo"
         />
         {canViewProfit ? (
-          <SummaryCard
+          <MetricCard
             icon={TrendingUp}
             label="ກໍາໄລ"
             value={formatCurrency(history.summary.profit)}
-            success
+            tone="emerald"
           />
         ) : null}
       </div>
@@ -124,38 +128,4 @@ function hideSaleCosts(sales: Sale[]): Sale[] {
       cost: 0
     }))
   }));
-}
-
-function SummaryCard({
-  icon: Icon,
-  label,
-  value,
-  success = false
-}: {
-  icon: ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
-  label: string;
-  value: string;
-  success?: boolean;
-}) {
-  return (
-    <Card>
-      <CardContent className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-zinc-100 text-zinc-700">
-          <Icon className="h-5 w-5" aria-hidden />
-        </div>
-        <div className="min-w-0">
-          <p className="text-sm text-zinc-500">{label}</p>
-          <p
-            className={
-              success
-                ? "truncate text-xl font-bold text-emerald-700"
-                : "truncate text-xl font-bold text-zinc-950"
-            }
-          >
-            {value}
-          </p>
-        </div>
-      </CardContent>
-    </Card>
-  );
 }

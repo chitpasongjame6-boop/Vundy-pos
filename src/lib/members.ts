@@ -1,4 +1,5 @@
 import type { Member, MemberSummary, MemberTier, Sale } from "@/types";
+import { effectiveSaleAmount, isRevenueSale } from "./sales";
 
 export function getMemberTierForSpend(
   tiers: MemberTier[],
@@ -16,11 +17,11 @@ export function buildMemberSummaries(
   tiers: MemberTier[],
   sales: Sale[]
 ): MemberSummary[] {
-  const activeSales = sales.filter((sale) => !sale.status || sale.status === "ACTIVE");
+  const activeSales = sales.filter(isRevenueSale);
 
   return members.map((member) => {
     const memberSales = activeSales.filter((sale) => sale.memberId === member.id);
-    const totalSpend = memberSales.reduce((sum, sale) => sum + sale.netAmount, 0);
+    const totalSpend = memberSales.reduce((sum, sale) => sum + effectiveSaleAmount(sale), 0);
     const lastPurchaseAt =
       memberSales
         .map((sale) => new Date(sale.createdAt))

@@ -21,7 +21,7 @@ import {
 } from "@/lib/utils";
 
 const fieldClass = "space-y-1.5";
-const labelClass = "text-sm font-semibold text-zinc-700";
+const labelClass = "text-sm font-semibold text-slate-700";
 
 type ProductOption = {
   key: string;
@@ -179,12 +179,12 @@ export function OrderForm({
       <CardContent>
         <form action={submitCreateOrder} className="grid gap-4 lg:grid-cols-[1fr_24rem]">
           <div className="grid gap-4">
-            <div className="grid gap-3 rounded-md border border-zinc-200 p-3">
+            <div className="grid gap-3 rounded-xl border border-slate-200 p-3">
               <label className={fieldClass}>
                 <span className={labelClass}>ສະແກນ SKU / Barcode</span>
                 <div className="relative">
                   <Barcode
-                    className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-zinc-400"
+                    className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400"
                     aria-hidden
                   />
                   <Input
@@ -223,7 +223,7 @@ export function OrderForm({
                     {message}
                   </p>
                 ) : (
-                  <p className="text-xs text-zinc-500">
+                  <p className="text-xs text-slate-500">
                     ສະແກນ ຫຼື ເລືອກສິນຄ້າແລ້ວລະບົບຈະເພີ່ມເຂົ້າອໍເດີໃຫ້ເອງ
                   </p>
                 )}
@@ -267,6 +267,10 @@ export function OrderForm({
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <h3 className="text-base font-extrabold text-slate-950">2. ຂໍ້ມູນຜູ້ຮັບ ແລະ ການຈັດສົ່ງ</h3>
+                <p className="mt-1 text-sm text-slate-500">ກວດຊື່, ເບີໂທ, ທີ່ຢູ່ ແລະ ບໍລິສັດຂົນສົ່ງໃຫ້ຄົບ</p>
+              </div>
               <label className={fieldClass}>
                 <span className={labelClass}>ຊື່ລູກຄ້າ</span>
                 <Input name="customerName" required />
@@ -312,14 +316,14 @@ export function OrderForm({
             </div>
           </div>
 
-          <aside className="grid content-start gap-3">
-            <div className="rounded-md border border-zinc-200 p-3">
+          <aside className="grid content-start gap-3 lg:sticky lg:top-6 lg:self-start">
+            <div className="rounded-xl border border-slate-200 p-3">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <p className="flex items-center gap-2 font-bold text-zinc-950">
+                <p className="flex items-center gap-2 font-bold text-slate-950">
                   <ShoppingBasket className="h-5 w-5" aria-hidden />
                   ລາຍການອໍເດີ
                 </p>
-                <p className="text-sm font-semibold text-zinc-500">
+                <p className="text-sm font-semibold text-slate-500">
                   {cart.reduce((sum, item) => sum + item.quantity, 0)} ຊິ້ນ
                 </p>
               </div>
@@ -327,15 +331,15 @@ export function OrderForm({
               {cart.length ? (
                 <div className="grid gap-2">
                   {cart.map((item) => (
-                    <div key={item.key} className="rounded-md border border-zinc-200 p-3">
+                    <div key={item.key} className="rounded-xl border border-slate-200 p-3">
                       <input type="hidden" name="productVariantKey" value={item.key} />
                       <input type="hidden" name="quantity" value={item.quantity} />
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="font-semibold text-zinc-950">
+                          <p className="font-semibold text-slate-950">
                             {item.displayName}
                           </p>
-                          <p className="text-xs text-zinc-500">
+                          <p className="text-xs text-slate-500">
                             {item.sku} · {formatCurrency(item.price)} · ສະຕ໋ອກ {item.stock}
                           </p>
                         </div>
@@ -370,7 +374,7 @@ export function OrderForm({
                             <Plus className="h-4 w-4" aria-hidden />
                           </Button>
                         </div>
-                        <p className="font-bold text-zinc-950">
+                        <p className="font-bold text-slate-950">
                           {formatCurrency(item.price * item.quantity)}
                         </p>
                       </div>
@@ -378,13 +382,13 @@ export function OrderForm({
                   ))}
                 </div>
               ) : (
-                <div className="rounded-md border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500">
+                <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">
                   ສະແກນ ຫຼື ເພີ່ມສິນຄ້າເຂົ້າອໍເດີ
                 </div>
               )}
             </div>
 
-            <div className="rounded-md bg-zinc-50 p-3">
+            <div className="rounded-xl bg-slate-50 p-3">
               <SummaryRow label="ຍອດຂາຍ" value={formatCurrency(subtotal)} />
               <SummaryRow label="ຕົ້ນທຶນ" value={formatCurrency(totalCost)} />
               <SummaryRow label="ກໍາໄລ" value={formatCurrency(profit)} success />
@@ -412,8 +416,8 @@ function SummaryRow({
 }) {
   return (
     <div className="flex items-center justify-between gap-3 py-1 text-sm">
-      <span className="text-zinc-500">{label}</span>
-      <strong className={success ? "text-emerald-700" : "text-zinc-950"}>
+      <span className="text-slate-500">{label}</span>
+      <strong className={success ? "text-emerald-700" : "text-slate-950"}>
         {value}
       </strong>
     </div>

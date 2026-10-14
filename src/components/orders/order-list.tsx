@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useActionState, useState } from "react";
 import {
   CalendarDays,
   Edit3,
@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input, Select, Textarea } from "@/components/ui/input";
+import { EmptyState, FilterBar } from "@/components/ui/patterns";
 import { resolvePublicAssetUrl } from "@/lib/asset-url";
 import {
   cn,
@@ -46,9 +47,9 @@ export function OrderFilters({
   categories: string[];
 }) {
   return (
-    <form className="mb-4 grid gap-3 md:grid-cols-[1fr_13rem_13rem_11rem_auto]">
+    <FilterBar className="md:grid-cols-[1fr_13rem_13rem_11rem_auto]">
       <label className="relative">
-        <Search className="pointer-events-none absolute left-3 top-3 h-5 w-5 text-zinc-400" />
+        <Search className="pointer-events-none absolute left-3 top-3 h-5 w-5 text-slate-400" />
         <Input
           name="search"
           defaultValue={search}
@@ -81,7 +82,7 @@ export function OrderFilters({
       <Button type="submit" className="w-full md:w-auto">
         ຄົ້ນຫາ
       </Button>
-    </form>
+    </FilterBar>
   );
 }
 
@@ -115,13 +116,7 @@ export function OrderList({
   const selectedOrder = orders.find((order) => order.id === selectedOrderId);
 
   if (!orders.length) {
-    return (
-      <Card>
-        <CardContent>
-          <p className="text-sm text-zinc-500">ບໍ່ພົບອໍເດີຕາມເງື່ອນໄຂທີ່ເລືອກ</p>
-        </CardContent>
-      </Card>
-    );
+    return <EmptyState title="ບໍ່ພົບອໍເດີ" description="ລອງປ່ຽນຄໍາຄົ້ນ ຫຼື ເງື່ອນໄຂການກອງ" />;
   }
 
   return (
@@ -137,7 +132,7 @@ export function OrderList({
               key={order.id}
               className={cn(
                 "overflow-hidden transition",
-                selected && "border-zinc-950 shadow-md"
+                selected && "border-slate-950 shadow-md"
               )}
             >
               <button
@@ -149,13 +144,13 @@ export function OrderList({
               <CardContent className="space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="truncate text-lg font-bold tracking-normal text-zinc-950">
+                    <p className="truncate text-lg font-bold tracking-normal text-slate-950">
                       {order.customerName}
                     </p>
-                    <p className="mt-0.5 text-xs font-semibold text-zinc-500">
+                    <p className="mt-0.5 text-xs font-semibold text-slate-500">
                       {order.orderNo ?? order.id.slice(-8).toUpperCase()}
                     </p>
-                    <p className="mt-1 flex items-center gap-1.5 text-sm text-zinc-500">
+                    <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
                       <Phone className="h-4 w-4 shrink-0" aria-hidden />
                       <span className="truncate">{order.phone}</span>
                     </p>
@@ -165,14 +160,14 @@ export function OrderList({
                   </Badge>
                 </div>
 
-                <div className="rounded-md border border-zinc-200 bg-zinc-50 p-3">
-                  <p className="mb-2 text-xs font-semibold uppercase text-zinc-500">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="mb-2 text-xs font-semibold uppercase text-slate-500">
                     ທີ່ຢູ່ ແລະ ຂົນສົ່ງ
                   </p>
                   <OrderShippingInfo order={order} compact />
                 </div>
 
-                <div className="rounded-md border border-zinc-200 p-3">
+                <div className="rounded-xl border border-slate-200 p-3">
                   {firstItem ? (
                     <div className="grid grid-cols-[3rem_1fr] items-center gap-3">
                       <OrderItemThumbnail
@@ -181,18 +176,18 @@ export function OrderList({
                         size="sm"
                       />
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-zinc-950">
+                        <p className="truncate text-sm font-semibold text-slate-950">
                           {formatProductVariantName(firstItem.name, firstItem.variantName)}
                         </p>
-                        <p className="mt-1 truncate text-sm text-zinc-500">
+                        <p className="mt-1 truncate text-sm text-slate-500">
                           {firstItem.sku} · x{firstItem.quantity}
                           {moreItems ? ` · +${moreItems} ລາຍການ` : ""}
                         </p>
                       </div>
                     </div>
                   ) : (
-                    <p className="flex items-center gap-2 text-sm font-semibold text-zinc-950">
-                      <Package className="h-4 w-4 text-zinc-500" aria-hidden />
+                    <p className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+                      <Package className="h-4 w-4 text-slate-500" aria-hidden />
                       ບໍ່ມີລາຍການສິນຄ້າ
                     </p>
                   )}
@@ -200,22 +195,22 @@ export function OrderList({
 
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div>
-                    <p className="text-zinc-500">ຍອດຂາຍ</p>
-                    <p className="font-bold text-zinc-950">
+                    <p className="text-slate-500">ຍອດຂາຍ</p>
+                    <p className="font-bold text-slate-950">
                       {formatCurrency(order.totalAmount)}
                     </p>
                   </div>
                   <div>
-                    <p className="text-zinc-500">ກໍາໄລ</p>
+                    <p className="text-slate-500">ກໍາໄລ</p>
                     <p className="font-bold text-emerald-700">
                       {formatCurrency(order.profit)}
                     </p>
                   </div>
                 </div>
 
-                <div className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm">
-                  <p className="text-zinc-500">ການຊໍາລະ</p>
-                  <p className="font-bold text-zinc-950">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
+                  <p className="text-slate-500">ການຊໍາລະ</p>
+                  <p className="font-bold text-slate-950">
                     {order.paymentStatus === "COD"
                       ? "COD / ເກັບເງິນປາຍທາງ"
                       : "ຈ່າຍແລ້ວ"}
@@ -223,7 +218,7 @@ export function OrderList({
                 </div>
 
                 {order.status === "RETURNED" ? (
-                  <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm">
+                  <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm">
                     <p className="font-bold text-rose-800">ຕີກັບ</p>
                     <p className="mt-1 text-rose-700">
                       {order.returnReason || "ບໍ່ລະບຸເຫດຜົນ"}
@@ -231,12 +226,12 @@ export function OrderList({
                   </div>
                 ) : null}
 
-                <div className="flex items-center justify-between border-t border-zinc-100 pt-3 text-sm text-zinc-500">
+                <div className="flex items-center justify-between border-t border-slate-100 pt-3 text-sm text-slate-500">
                   <span className="flex items-center gap-1.5">
                     <CalendarDays className="h-4 w-4" aria-hidden />
                     {formatDate(new Date(order.createdAt))}
                   </span>
-                  <span className="font-semibold text-zinc-700">
+                  <span className="font-semibold text-slate-700">
                     ກົດເພື່ອເປີດ
                   </span>
                 </div>
@@ -249,18 +244,18 @@ export function OrderList({
 
       {selectedOrder ? (
         <div
-          className="fixed inset-0 z-50 flex items-end bg-zinc-950/45 p-0 sm:items-center sm:justify-center sm:p-4"
+          className="fixed inset-0 z-50 flex items-end bg-slate-950/45 p-0 sm:items-center sm:justify-center sm:p-4"
           role="dialog"
           aria-modal="true"
           aria-labelledby="order-detail-title"
         >
-          <div className="max-h-[88vh] w-full overflow-hidden rounded-t-lg bg-white shadow-xl sm:max-w-2xl sm:rounded-lg">
-            <div className="flex items-start justify-between gap-3 border-b border-zinc-200 p-4">
+          <div className="max-h-[88vh] w-full overflow-hidden rounded-t-2xl bg-white shadow-xl sm:max-w-2xl sm:rounded-2xl">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-200 p-4">
               <div className="min-w-0">
-                <p id="order-detail-title" className="truncate text-lg font-bold text-zinc-950">
+                <p id="order-detail-title" className="truncate text-lg font-bold text-slate-950">
                   {selectedOrder.customerName}
                 </p>
-                <p className="text-sm text-zinc-500">
+                <p className="text-sm text-slate-500">
                   {(selectedOrder.orderNo ?? selectedOrder.id.slice(-8).toUpperCase())} ·{" "}
                   {formatDate(new Date(selectedOrder.createdAt))}
                 </p>
@@ -298,6 +293,11 @@ function OrderDetailsPanel({
   showHistoryActions: boolean;
   storeSettings: StoreSettings;
 }) {
+  const [statusState, statusAction, isStatusPending] = useActionState(
+    updateOrderStatusFromForm,
+    { ok: null, message: "" }
+  );
+
   return (
     <div className="grid gap-3 text-sm">
       <DetailRow label="ຂໍ້ມູນລູກຄ້າ ແລະ ຂົນສົ່ງ">
@@ -305,14 +305,14 @@ function OrderDetailsPanel({
       </DetailRow>
 
       <div>
-        <p className="mb-2 text-xs font-semibold uppercase text-zinc-500">
+        <p className="mb-2 text-xs font-semibold uppercase text-slate-500">
           ລາຍການສິນຄ້າ
         </p>
         <div className="grid gap-2">
           {order.items.map((item) => (
             <div
               key={`${order.id}-${item.productId}-${item.variantId ?? item.sku}`}
-              className="rounded-md border border-zinc-200 p-3"
+              className="rounded-xl border border-slate-200 p-3"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="grid min-w-0 grid-cols-[3.5rem_1fr] gap-3">
@@ -322,19 +322,19 @@ function OrderDetailsPanel({
                     size="md"
                   />
                   <div className="min-w-0">
-                    <p className="font-semibold text-zinc-950">
+                    <p className="font-semibold text-slate-950">
                       {formatProductVariantName(item.name, item.variantName)}
                     </p>
-                    <p className="text-zinc-500">
+                    <p className="text-slate-500">
                       {item.sku} · x{item.quantity}
                     </p>
                   </div>
                 </div>
-                <p className="font-semibold text-zinc-950">
+                <p className="font-semibold text-slate-950">
                   {formatCurrency(item.price * item.quantity)}
                 </p>
               </div>
-              <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-zinc-500">
+              <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-500">
                 <p>ລາຄາຂາຍ: {formatCurrency(item.price)}</p>
                 <p>ຕົ້ນທຶນ: {formatCurrency(item.cost)}</p>
               </div>
@@ -343,21 +343,21 @@ function OrderDetailsPanel({
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-2 rounded-md bg-zinc-50 p-3">
+      <div className="grid grid-cols-3 gap-2 rounded-xl bg-slate-50 p-3">
         <div>
-          <p className="text-xs text-zinc-500">ຍອດຂາຍ</p>
-          <p className="font-bold text-zinc-950">
+          <p className="text-xs text-slate-500">ຍອດຂາຍ</p>
+          <p className="font-bold text-slate-950">
             {formatCurrency(order.totalAmount)}
           </p>
         </div>
         <div>
-          <p className="text-xs text-zinc-500">ຕົ້ນທຶນ</p>
-          <p className="font-bold text-zinc-950">
+          <p className="text-xs text-slate-500">ຕົ້ນທຶນ</p>
+          <p className="font-bold text-slate-950">
             {formatCurrency(order.totalCost)}
           </p>
         </div>
         <div>
-          <p className="text-xs text-zinc-500">ກໍາໄລ</p>
+          <p className="text-xs text-slate-500">ກໍາໄລ</p>
           <p className="font-bold text-emerald-700">
             {formatCurrency(order.profit)}
           </p>
@@ -365,7 +365,7 @@ function OrderDetailsPanel({
       </div>
 
       {order.status === "RETURNED" ? (
-        <div className="rounded-md border border-rose-200 bg-rose-50 p-3">
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-3">
           <p className="mb-2 text-xs font-semibold uppercase text-rose-700">
             ຂໍ້ມູນຕີກັບ
           </p>
@@ -415,11 +415,11 @@ function OrderDetailsPanel({
         </div>
       ) : null}
 
-      <div className="rounded-md border border-zinc-200 p-3">
-        <p className="mb-1 text-xs font-semibold uppercase text-zinc-500">
+      <div className="rounded-xl border border-slate-200 p-3">
+        <p className="mb-1 text-xs font-semibold uppercase text-slate-500">
           ການຊໍາລະ
         </p>
-        <p className="font-bold text-zinc-950">
+        <p className="font-bold text-slate-950">
           {order.paymentStatus === "COD"
             ? `COD / ເກັບເງິນປາຍທາງ ${formatCurrency(order.totalAmount)}`
             : "ຈ່າຍແລ້ວ"}
@@ -427,21 +427,21 @@ function OrderDetailsPanel({
       </div>
 
       {order.note ? (
-        <div className="rounded-md border border-zinc-200 p-3">
-          <p className="mb-1 text-xs font-semibold uppercase text-zinc-500">
+        <div className="rounded-xl border border-slate-200 p-3">
+          <p className="mb-1 text-xs font-semibold uppercase text-slate-500">
             ໝາຍເຫດ
           </p>
-          <p className="text-zinc-700">{order.note}</p>
+          <p className="text-slate-700">{order.note}</p>
         </div>
       ) : null}
 
-      <div className="rounded-md border border-zinc-200 p-3">
-        <p className="mb-2 text-xs font-semibold uppercase text-zinc-500">
+      <div className="rounded-xl border border-slate-200 p-3">
+        <p className="mb-2 text-xs font-semibold uppercase text-slate-500">
           ປ່ຽນສະຖານະ
         </p>
         <div className="flex flex-wrap gap-2">
           {directOrderStatuses.map((status) => (
-            <form key={status} action={updateOrderStatusFromForm}>
+            <form key={status} action={statusAction}>
               <input type="hidden" name="orderId" value={order.id} />
               <input type="hidden" name="status" value={status} />
               <Button
@@ -450,19 +450,32 @@ function OrderDetailsPanel({
                 className={cn(
                   "min-h-9 px-3 text-xs",
                   statusConfig[status].className,
-                  order.status === status && "ring-2 ring-zinc-900"
+                  order.status === status && "ring-2 ring-slate-900"
                 )}
-                disabled={order.status === status}
+                disabled={isStatusPending || order.status === status}
               >
                 {statusConfig[status].label}
               </Button>
             </form>
           ))}
         </div>
-        {order.status !== "RETURNED" ? (
+        {statusState.message ? (
+          <p
+            role="status"
+            className={cn(
+              "mt-3 rounded-lg border px-3 py-2 text-xs font-semibold",
+              statusState.ok
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : "border-rose-200 bg-rose-50 text-rose-700"
+            )}
+          >
+            {statusState.message}
+          </p>
+        ) : null}
+        {order.status !== "RETURNED" && order.status !== "CANCELLED" ? (
           <form
-            action={updateOrderStatusFromForm}
-            className="mt-3 grid gap-2 rounded-md border border-rose-200 bg-rose-50 p-3"
+            action={statusAction}
+            className="mt-3 grid gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3"
           >
             <input type="hidden" name="orderId" value={order.id} />
             <input type="hidden" name="status" value="RETURNED" />
@@ -491,6 +504,7 @@ function OrderDetailsPanel({
               type="submit"
               variant="secondary"
               className="w-full border-rose-200 bg-rose-600 text-white hover:bg-rose-700"
+              disabled={isStatusPending}
             >
               ບັນທຶກຕີກັບ
             </Button>
@@ -499,40 +513,40 @@ function OrderDetailsPanel({
       </div>
 
       {showHistoryActions ? (
-        <div className="grid gap-3 border-t border-zinc-200 pt-3">
+        <div className="grid gap-3 border-t border-slate-200 pt-3">
           <form action={updateOrderInfo} className="grid gap-3">
             <input type="hidden" name="orderId" value={order.id} />
-            <p className="flex items-center gap-2 text-sm font-bold text-zinc-950">
+            <p className="flex items-center gap-2 text-sm font-bold text-slate-950">
               <Edit3 className="h-4 w-4" aria-hidden />
               ແກ້ໄຂຂໍ້ມູນອໍເດີ
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="space-y-1.5">
-                <span className="text-xs font-semibold text-zinc-500">
+                <span className="text-xs font-semibold text-slate-500">
                   ຊື່ລູກຄ້າ
                 </span>
                 <Input name="customerName" defaultValue={order.customerName} required />
               </label>
               <label className="space-y-1.5">
-                <span className="text-xs font-semibold text-zinc-500">
+                <span className="text-xs font-semibold text-slate-500">
                   ເບີໂທ
                 </span>
                 <Input name="phone" defaultValue={order.phone} required />
               </label>
               <label className="space-y-1.5">
-                <span className="text-xs font-semibold text-zinc-500">
+                <span className="text-xs font-semibold text-slate-500">
                   ແຂວງ
                 </span>
                 <Input name="province" defaultValue={order.province} required />
               </label>
               <label className="space-y-1.5">
-                <span className="text-xs font-semibold text-zinc-500">
+                <span className="text-xs font-semibold text-slate-500">
                   ເມືອງ
                 </span>
                 <Input name="city" defaultValue={order.city} required />
               </label>
               <label className="space-y-1.5 sm:col-span-2">
-                <span className="text-xs font-semibold text-zinc-500">
+                <span className="text-xs font-semibold text-slate-500">
                   ບໍລິສັດຂົນສົ່ງ
                 </span>
                 <Select
@@ -548,7 +562,7 @@ function OrderDetailsPanel({
                 </Select>
               </label>
               <label className="space-y-1.5 sm:col-span-2">
-                <span className="text-xs font-semibold text-zinc-500">
+                <span className="text-xs font-semibold text-slate-500">
                   ສາຂາຮັບເຄື່ອງ
                 </span>
                 <Input
@@ -558,7 +572,7 @@ function OrderDetailsPanel({
                 />
               </label>
               <label className="space-y-1.5 sm:col-span-2">
-                <span className="text-xs font-semibold text-zinc-500">
+                <span className="text-xs font-semibold text-slate-500">
                   ໝາຍເຫດ
                 </span>
                 <Textarea name="note" defaultValue={order.note ?? ""} />
@@ -597,7 +611,7 @@ function OrderItemThumbnail({
   size: "sm" | "md";
 }) {
   const className = cn(
-    "relative shrink-0 overflow-hidden rounded-md border border-zinc-200 bg-zinc-100",
+    "relative shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100",
     size === "sm" ? "h-12 w-12" : "h-14 w-14"
   );
 
@@ -613,7 +627,7 @@ function OrderItemThumbnail({
         />
       ) : (
         <div className="flex h-full w-full items-center justify-center">
-          <Package className="h-5 w-5 text-zinc-400" aria-hidden />
+          <Package className="h-5 w-5 text-slate-400" aria-hidden />
         </div>
       )}
     </div>
@@ -892,8 +906,8 @@ function DetailRow({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-md border border-zinc-200 p-3">
-      <p className="mb-2 text-xs font-semibold uppercase text-zinc-500">
+    <div className="rounded-xl border border-slate-200 p-3">
+      <p className="mb-2 text-xs font-semibold uppercase text-slate-500">
         {label}
       </p>
       {children}
@@ -911,8 +925,8 @@ function OrderShippingInfo({
   const rowClass = compact
     ? "grid grid-cols-[5.75rem_1fr] gap-2 text-sm"
     : "grid grid-cols-[6.5rem_1fr] gap-2 text-sm";
-  const labelClass = "text-zinc-500";
-  const valueClass = "min-w-0 font-semibold text-zinc-950";
+  const labelClass = "text-slate-500";
+  const valueClass = "min-w-0 font-semibold text-slate-950";
 
   return (
     <div className="grid gap-1.5">
@@ -922,7 +936,7 @@ function OrderShippingInfo({
       </div>
       <div className={rowClass}>
         <span className={labelClass}>ເບີຜູ້ຮັບ :</span>
-        <span className="min-w-0 text-zinc-700">{order.phone}</span>
+        <span className="min-w-0 text-slate-700">{order.phone}</span>
       </div>
       <div className={rowClass}>
         <span className={labelClass}>ຂົນສົ່ງ :</span>
@@ -930,15 +944,15 @@ function OrderShippingInfo({
       </div>
       <div className={rowClass}>
         <span className={labelClass}>ສາຂາ :</span>
-        <span className="min-w-0 text-zinc-700">{order.pickupBranch || "-"}</span>
+        <span className="min-w-0 text-slate-700">{order.pickupBranch || "-"}</span>
       </div>
       <div className={rowClass}>
         <span className={labelClass}>ເມືອງ :</span>
-        <span className="min-w-0 text-zinc-700">{order.city}</span>
+        <span className="min-w-0 text-slate-700">{order.city}</span>
       </div>
       <div className={rowClass}>
         <span className={labelClass}>ແຂວງ :</span>
-        <span className="min-w-0 text-zinc-700">{order.province}</span>
+        <span className="min-w-0 text-slate-700">{order.province}</span>
       </div>
     </div>
   );

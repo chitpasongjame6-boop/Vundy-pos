@@ -9,7 +9,7 @@ export default async function NewProductPage() {
     <section>
       <PageHeader
         title="ເພີ່ມສິນຄ້າ"
-        description="ປ້ອນຂໍ້ມູນສິນຄ້າ ຕົ້ນທຶນ ລາຄາຂາຍ ຈໍານວນສະຕ໋ອກ ແລະ ຮູບພາບ"
+        description="ສ້າງສິນຄ້າໃໝ່ຕາມ 3 ຂັ້ນຕອນ: ຂໍ້ມູນ, ຮູບແບບການຂາຍ, ລາຄາ ແລະ ສະຕ໋ອກ"
       />
       <ProductForm categories={categories} />
     </section>

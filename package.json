@@ -2,6 +2,9 @@
   "name": "stock-order-management-vl",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "description": "ລະບົບຈັດການສະຕ໋ອກ ແລະ ອໍເດີ ສ້າງດ້ວຍ Next.js, TypeScript, MongoDB, Prisma, Tailwind CSS, shadcn-style UI ແລະ Recharts.",
   "scripts": {
     "dev": "next dev --webpack",
@@ -9,19 +12,22 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "prisma:generate": "prisma generate",
     "prisma:studio": "prisma studio"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1051.0",
-    "@prisma/client": "^6.19.0",
+    "@prisma/client": "6.19.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.16.0",
-    "next": "^16.2.6",
+    "next": "^16.4.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "recharts": "^3.8.1",
+    "sharp": "^0.35.5",
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
@@ -30,9 +36,13 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "eslint": "^9.39.4",
-    "eslint-config-next": "^16.2.6",
-    "prisma": "^6.19.0",
+    "eslint-config-next": "^16.4.0",
+    "prisma": "6.19.3",
     "tailwindcss": "^4.3.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.3"
+  },
+  "overrides": {
+    "deepmerge-ts": "8.0.0"
   }
 }

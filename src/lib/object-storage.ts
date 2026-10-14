@@ -1,4 +1,5 @@
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { compressProductImage, ProductImageError } from "./product-image";
 
 const imageExtensions: Record<string, string> = {
   "image/jpeg": "jpg",
@@ -7,23 +8,23 @@ const imageExtensions: Record<string, string> = {
   "image/gif": "gif"
 };
 const maxInlineImageSize = 1.5 * 1024 * 1024;
+const maxUploadedImageSize = 5 * 1024 * 1024;
 
 type SaveUploadedImageOptions = {
   folder: string;
   fileNamePrefix?: string;
+  compressToWebp?: boolean;
 };
 
-type S3Config = {
+type R2Config = {
+  accountId: string;
   bucket: string;
-  region: string;
-  endpoint?: string;
   accessKeyId: string;
   secretAccessKey: string;
-  forcePathStyle: boolean;
-  publicUrlPrefix?: string;
+  publicUrl: string;
 };
 
-let s3Client: S3Client | null = null;
+let r2Client: S3Client | null = null;
 
 export async function saveUploadedImage(
   value: FormDataEntryValue | null,
@@ -33,82 +34,84 @@ export async function saveUploadedImage(
     return null;
   }
 
-  const extension = imageExtensions[value.type];
-
-  if (!extension) {
+  if (!options.compressToWebp && (value.size > maxUploadedImageSize || !imageExtensions[value.type])) {
     return null;
   }
 
-  const buffer = Buffer.from(await value.arrayBuffer());
-  const s3Config = getS3Config();
+  const buffer = options.compressToWebp
+    ? await compressProductImage(value)
+    : Buffer.from(await value.arrayBuffer());
+  const extension = options.compressToWebp ? "webp" : imageExtensions[value.type];
+  const contentType = options.compressToWebp ? "image/webp" : value.type;
+  function inlineFallback() {
+    const url = buildInlineImageUrl(buffer, contentType);
+    if (!url && options.compressToWebp) {
+      throw new ProductImageError("ບັນທຶກຮູບບໍ່ໄດ້ ກະລຸນາກວດການເຊື່ອມຕໍ່ R2 ຫຼື ເລືອກຮູບທີ່ນ້ອຍກວ່າ");
+    }
+    return url;
+  }
+  const r2Config = getR2Config();
 
-  if (!s3Config) {
-    return buildInlineImageUrl(buffer, value.type);
+  if (!r2Config) {
+    return inlineFallback();
   }
 
   const key = buildObjectKey(options.folder, options.fileNamePrefix, extension);
   try {
-    await getS3Client(s3Config).send(
+    await getR2Client(r2Config).send(
       new PutObjectCommand({
-        Bucket: s3Config.bucket,
+        Bucket: r2Config.bucket,
         Key: key,
         Body: buffer,
-        ContentType: value.type,
-        CacheControl: "public, max-age=31536000, immutable",
-        ACL: process.env.S3_ACL === "public-read" ? "public-read" : undefined
+        ContentType: contentType,
+        CacheControl: "public, max-age=31536000, immutable"
       })
     );
   } catch {
-    return buildInlineImageUrl(buffer, value.type);
+    console.error("Cloudflare R2 image upload failed; using inline image fallback.");
+    return inlineFallback();
   }
 
-  return buildPublicObjectUrl(s3Config, key);
+  return buildPublicObjectUrl(r2Config, key);
 }
 
 export function getObjectStorageHealth() {
-  const config = getS3Config();
+  const config = getR2Config();
 
   return {
-    s3Configured: Boolean(config),
+    provider: "cloudflare-r2",
+    r2Configured: Boolean(config),
     bucket: config?.bucket ?? null,
-    region: config?.region ?? null,
-    endpointConfigured: Boolean(config?.endpoint),
-    publicUrlPrefixConfigured: Boolean(config?.publicUrlPrefix)
+    accountIdConfigured: Boolean(config?.accountId),
+    publicUrlConfigured: Boolean(config?.publicUrl)
   };
 }
 
-function getS3Config(): S3Config | null {
-  const bucket = process.env.S3_BUCKET?.trim();
-  const region = process.env.S3_REGION?.trim();
-  const accessKeyId =
-    process.env.S3_ACCESS_KEY_ID?.trim() ?? process.env.AWS_ACCESS_KEY_ID?.trim();
-  const secretAccessKey =
-    process.env.S3_SECRET_ACCESS_KEY?.trim() ??
-    process.env.AWS_SECRET_ACCESS_KEY?.trim();
+function getR2Config(): R2Config | null {
+  const accountId = process.env.R2_ACCOUNT_ID?.trim();
+  const bucket = process.env.R2_BUCKET_NAME?.trim();
+  const accessKeyId = process.env.R2_ACCESS_KEY_ID?.trim();
+  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY?.trim();
+  const publicUrl = process.env.R2_PUBLIC_URL?.trim();
 
-  if (!bucket || !region || !accessKeyId || !secretAccessKey) {
+  if (!accountId || !bucket || !accessKeyId || !secretAccessKey || !publicUrl) {
     return null;
   }
 
-  const endpoint = process.env.S3_ENDPOINT?.trim() || undefined;
-
   return {
+    accountId,
     bucket,
-    region,
-    endpoint,
     accessKeyId,
     secretAccessKey,
-    forcePathStyle: parseBoolean(process.env.S3_FORCE_PATH_STYLE) ?? Boolean(endpoint),
-    publicUrlPrefix: process.env.S3_PUBLIC_URL_PREFIX?.trim() || undefined
+    publicUrl
   };
 }
 
-function getS3Client(config: S3Config) {
-  if (!s3Client) {
-    s3Client = new S3Client({
-      region: config.region,
-      endpoint: config.endpoint,
-      forcePathStyle: config.forcePathStyle,
+function getR2Client(config: R2Config) {
+  if (!r2Client) {
+    r2Client = new S3Client({
+      region: "auto",
+      endpoint: `https://${config.accountId}.r2.cloudflarestorage.com`,
       credentials: {
         accessKeyId: config.accessKeyId,
         secretAccessKey: config.secretAccessKey
@@ -116,7 +119,7 @@ function getS3Client(config: S3Config) {
     });
   }
 
-  return s3Client;
+  return r2Client;
 }
 
 function buildObjectKey(folder: string, prefix = "upload", extension: string) {
@@ -126,27 +129,8 @@ function buildObjectKey(folder: string, prefix = "upload", extension: string) {
   return `${cleanFolder}/${cleanPrefix}-${crypto.randomUUID()}.${extension}`;
 }
 
-function buildPublicObjectUrl(config: S3Config, key: string) {
-  if (config.publicUrlPrefix) {
-    return `${config.publicUrlPrefix.replace(/\/+$/g, "")}/${key}`;
-  }
-
-  if (config.endpoint) {
-    const endpointUrl = new URL(config.endpoint);
-
-    if (config.forcePathStyle) {
-      return `${endpointUrl.origin}/${config.bucket}/${key}`;
-    }
-
-    return `${endpointUrl.protocol}//${config.bucket}.${endpointUrl.host}/${key}`;
-  }
-
-  const host =
-    config.region === "us-east-1"
-      ? `${config.bucket}.s3.amazonaws.com`
-      : `${config.bucket}.s3.${config.region}.amazonaws.com`;
-
-  return `https://${host}/${key}`;
+function buildPublicObjectUrl(config: R2Config, key: string) {
+  return `${config.publicUrl.replace(/\/+$/g, "")}/${key}`;
 }
 
 function buildInlineImageUrl(buffer: Buffer, contentType: string) {
@@ -155,16 +139,4 @@ function buildInlineImageUrl(buffer: Buffer, contentType: string) {
   }
 
   return `data:${contentType};base64,${buffer.toString("base64")}`;
-}
-
-function parseBoolean(value?: string) {
-  if (value === "true") {
-    return true;
-  }
-
-  if (value === "false") {
-    return false;
-  }
-
-  return null;
 }

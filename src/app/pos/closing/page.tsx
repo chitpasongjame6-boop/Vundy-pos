@@ -1,4 +1,3 @@
-import type { ComponentType } from "react";
 import { Banknote, CreditCard, ReceiptText, TrendingUp, Wallet } from "lucide-react";
 import { closeDailySales, getDailyClosing } from "@/actions/pos.action";
 import { PageHeader } from "@/components/layout/page-header";
@@ -6,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input, Textarea } from "@/components/ui/input";
 import { MoneyInput } from "@/components/ui/money-input";
+import { FilterBar, MetricCard } from "@/components/ui/patterns";
 import { getCurrentUser } from "@/lib/auth";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
@@ -30,7 +30,7 @@ export default async function PosClosingPage({
         actionLabel="ປະຫວັດບິນ"
       />
 
-      <form className="mb-4 flex flex-col gap-3 sm:flex-row">
+      <FilterBar className="sm:grid-cols-[14rem_auto] sm:items-center">
         <Input
           type="date"
           name="date"
@@ -41,35 +41,39 @@ export default async function PosClosingPage({
         <Button type="submit" className="sm:w-auto">
           ເບິ່ງຍອດ
         </Button>
-      </form>
+      </FilterBar>
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <SummaryCard
+      <div className={`mb-4 grid grid-cols-2 gap-3 ${canViewProfit ? "xl:grid-cols-5" : "xl:grid-cols-4"}`}>
+        <MetricCard
           icon={Banknote}
           label="ເງິນສົດຕາມລະບົບ"
           value={formatCurrency(data.summary.cashAmount)}
+          tone="emerald"
         />
-        <SummaryCard
+        <MetricCard
           icon={CreditCard}
           label="ເງິນໂອນ"
           value={formatCurrency(data.summary.transferAmount)}
+          tone="sky"
         />
-        <SummaryCard
+        <MetricCard
           icon={Wallet}
           label="ອື່ນໆ"
           value={formatCurrency(data.summary.otherAmount)}
+          tone="amber"
         />
-        <SummaryCard
+        <MetricCard
           icon={ReceiptText}
           label={`ລວມ ${data.summary.billCount} ບິນ`}
           value={formatCurrency(data.summary.totalAmount)}
+          tone="indigo"
         />
         {canViewProfit ? (
-          <SummaryCard
+          <MetricCard
             icon={TrendingUp}
             label="ກໍາໄລ"
             value={formatCurrency(data.summary.profit)}
-            success
+            tone="emerald"
           />
         ) : null}
       </div>
@@ -80,7 +84,7 @@ export default async function PosClosingPage({
             <form action={closeDailySales} className="grid gap-3">
               <input type="hidden" name="date" value={data.date} />
               <label className="space-y-1.5">
-                <span className="text-sm font-semibold text-zinc-700">
+                <span className="text-sm font-semibold text-slate-700">
                   ເງິນສົດທີ່ນັບໄດ້ຈິງ
                 </span>
                 <MoneyInput
@@ -90,7 +94,7 @@ export default async function PosClosingPage({
                 />
               </label>
               <label className="space-y-1.5">
-                <span className="text-sm font-semibold text-zinc-700">
+                <span className="text-sm font-semibold text-slate-700">
                   ໝາຍເຫດ
                 </span>
                 <Textarea
@@ -99,6 +103,14 @@ export default async function PosClosingPage({
                   placeholder="ຕົວຢ່າງ: ເງິນສົດຂາດ/ເກີນ ຫຼື ໝາຍເຫດປະຈໍາວັນ"
                 />
               </label>
+              {currentUser?.role === "STAFF" ? (
+                <label className="space-y-1.5">
+                  <span className="text-sm font-semibold text-slate-700">
+                    PIN ເຈົ້າຂອງຮ້ານ
+                  </span>
+                  <Input name="approvalPin" type="password" required autoComplete="off" />
+                </label>
+              ) : null}
               <Button type="submit" className="w-full sm:w-auto">
                 ບັນທຶກປິດຍອດ
               </Button>
@@ -108,7 +120,7 @@ export default async function PosClosingPage({
 
         <Card>
           <CardContent className="space-y-3">
-            <p className="text-lg font-bold text-zinc-950">ສະຖານະການປິດຍອດ</p>
+            <p className="text-lg font-bold text-slate-950">ສະຖານະການປິດຍອດ</p>
             {data.closing ? (
               <div className="grid gap-2 text-sm">
                 <Line label="ເລກປິດຍອດ" value={data.closing.closingNo ?? "-"} />
@@ -128,46 +140,12 @@ export default async function PosClosingPage({
                 />
               </div>
             ) : (
-              <p className="text-sm text-zinc-500">ຍັງບໍ່ໄດ້ປິດຍອດວັນນີ້</p>
+              <p className="text-sm text-slate-500">ຍັງບໍ່ໄດ້ປິດຍອດວັນນີ້</p>
             )}
           </CardContent>
         </Card>
       </div>
     </section>
-  );
-}
-
-function SummaryCard({
-  icon: Icon,
-  label,
-  value,
-  success = false
-}: {
-  icon: ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
-  label: string;
-  value: string;
-  success?: boolean;
-}) {
-  return (
-    <Card>
-      <CardContent className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-zinc-100 text-zinc-700">
-          <Icon className="h-5 w-5" aria-hidden />
-        </div>
-        <div className="min-w-0">
-          <p className="text-sm text-zinc-500">{label}</p>
-          <p
-            className={
-              success
-                ? "truncate text-xl font-bold text-emerald-700"
-                : "truncate text-xl font-bold text-zinc-950"
-            }
-          >
-            {value}
-          </p>
-        </div>
-      </CardContent>
-    </Card>
   );
 }
 
@@ -184,14 +162,14 @@ function Line({
 }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <span className="text-zinc-500">{label}</span>
+      <span className="text-slate-500">{label}</span>
       <span
         className={
           success
             ? "font-bold text-emerald-700"
             : danger
               ? "font-bold text-rose-700"
-              : "font-bold text-zinc-950"
+              : "font-bold text-slate-950"
         }
       >
         {value}

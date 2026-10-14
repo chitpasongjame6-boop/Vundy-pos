@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { EmptyState, MetricCard } from "@/components/ui/patterns";
 import { formatProductVariantName, getProductVariants } from "@/lib/utils";
 
 export default async function StockAlertsPage() {
@@ -33,10 +34,10 @@ export default async function StockAlertsPage() {
         actionLabel="ໄປໜ້າສິນຄ້າ"
       />
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-3">
-        <SummaryCard label="ລາຍການແຈ້ງເຕືອນ" value={rows.length} />
-        <SummaryCard label="ໝົດສະຕ໋ອກ" value={outCount} tone="rose" />
-        <SummaryCard label="ໃກ້ໝົດ" value={rows.length - outCount} tone="amber" />
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <MetricCard label="ລາຍການແຈ້ງເຕືອນ" value={rows.length} tone="indigo" />
+        <MetricCard label="ໝົດສະຕ໋ອກ" value={outCount} tone="rose" />
+        <MetricCard label="ໃກ້ໝົດ" value={rows.length - outCount} tone="amber" />
       </div>
 
       {rows.length ? (
@@ -47,8 +48,8 @@ export default async function StockAlertsPage() {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-start gap-2">
                     <div className="min-w-0 flex-1">
-                      <p className="font-bold text-zinc-950">{product.name}</p>
-                      <p className="text-sm text-zinc-500">
+                      <p className="font-bold text-slate-950">{product.name}</p>
+                      <p className="text-sm text-slate-500">
                         {formatProductVariantName(product.name, variant.name)} · SKU: {variant.sku}
                       </p>
                     </div>
@@ -68,7 +69,7 @@ export default async function StockAlertsPage() {
                     <Info label="ໝວດໝູ່" value={product.category} />
                   </div>
                 </div>
-                <form action={updateProductVariantStock} className="grid min-w-[14rem] gap-2">
+                <form action={updateProductVariantStock} className="grid min-w-0 gap-2 md:min-w-[14rem]">
                   <input type="hidden" name="productId" value={product.id} />
                   <input type="hidden" name="variantId" value={variant.id} />
                   <Input
@@ -84,7 +85,7 @@ export default async function StockAlertsPage() {
                   </Button>
                   <Link
                     href={`/products?search=${encodeURIComponent(variant.sku)}`}
-                    className="text-center text-sm font-semibold text-zinc-600 hover:text-zinc-950"
+                    className="text-center text-sm font-semibold text-slate-600 hover:text-slate-950"
                   >
                     ເບິ່ງລາຍລະອຽດ
                   </Link>
@@ -94,41 +95,12 @@ export default async function StockAlertsPage() {
           ))}
         </div>
       ) : (
-        <Card>
-          <CardContent>
-            <p className="text-sm text-zinc-500">
-              ຍັງບໍ່ມີສິນຄ້າໃກ້ໝົດ ຫຼື ໝົດສະຕ໋ອກ
-            </p>
-          </CardContent>
-        </Card>
+        <EmptyState
+          title="ສະຕ໋ອກຢູ່ໃນລະດັບປົກກະຕິ"
+          description="ຍັງບໍ່ມີສິນຄ້າໃກ້ໝົດ ຫຼື ໝົດສະຕ໋ອກ"
+        />
       )}
     </section>
-  );
-}
-
-function SummaryCard({
-  label,
-  value,
-  tone = "zinc"
-}: {
-  label: string;
-  value: number;
-  tone?: "zinc" | "rose" | "amber";
-}) {
-  const color =
-    tone === "rose"
-      ? "text-rose-700"
-      : tone === "amber"
-        ? "text-amber-700"
-        : "text-zinc-950";
-
-  return (
-    <Card>
-      <CardContent>
-        <p className="text-sm text-zinc-500">{label}</p>
-        <p className={`mt-1 text-2xl font-bold ${color}`}>{value}</p>
-      </CardContent>
-    </Card>
   );
 }
 
@@ -142,9 +114,9 @@ function Info({
   strong?: boolean;
 }) {
   return (
-    <div className="rounded-md bg-zinc-50 p-2">
-      <p className="text-xs text-zinc-500">{label}</p>
-      <p className={strong ? "font-bold text-rose-700" : "font-bold text-zinc-950"}>
+    <div className="rounded-xl bg-slate-50 p-2">
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className={strong ? "font-bold text-rose-700" : "font-bold text-slate-950"}>
         {value}
       </p>
     </div>

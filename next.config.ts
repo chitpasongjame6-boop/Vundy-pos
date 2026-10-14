@@ -39,27 +39,17 @@ function buildImageRemotePatterns(): RemotePattern[] {
       hostname: "vl-stock-images.s3.ap-southeast-1.amazonaws.com"
     }
   ];
-  const publicPattern = remotePatternFromUrl(process.env.S3_PUBLIC_URL_PREFIX);
-  const endpointPattern = remotePatternFromUrl(process.env.S3_ENDPOINT);
-  const bucket = process.env.S3_BUCKET?.trim();
-  const region = process.env.S3_REGION?.trim();
+  const r2PublicPattern = remotePatternFromUrl(process.env.R2_PUBLIC_URL);
+  const legacyS3PublicPattern = remotePatternFromUrl(
+    process.env.S3_PUBLIC_URL_PREFIX
+  );
 
-  if (publicPattern) {
-    patterns.push(publicPattern);
+  if (r2PublicPattern) {
+    patterns.push(r2PublicPattern);
   }
 
-  if (endpointPattern) {
-    patterns.push(endpointPattern);
-  }
-
-  if (bucket && region) {
-    patterns.push({
-      protocol: "https",
-      hostname:
-        region === "us-east-1"
-          ? `${bucket}.s3.amazonaws.com`
-          : `${bucket}.s3.${region}.amazonaws.com`
-    });
+  if (legacyS3PublicPattern) {
+    patterns.push(legacyS3PublicPattern);
   }
 
   return patterns.filter(
@@ -74,6 +64,7 @@ function buildImageRemotePatterns(): RemotePattern[] {
 }
 
 const nextConfig: NextConfig = {
+  poweredByHeader: false,
   experimental: {
     serverActions: {
       bodySizeLimit: "8mb"
@@ -81,6 +72,22 @@ const nextConfig: NextConfig = {
   },
   images: {
     remotePatterns: buildImageRemotePatterns()
+  },
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          {
+            key: "Permissions-Policy",
+            value: "camera=(), microphone=(), geolocation=()"
+          }
+        ]
+      }
+    ];
   }
 };
 

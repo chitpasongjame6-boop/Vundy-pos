@@ -4,6 +4,9 @@ import { getOrders } from "@/actions/order.action";
 import { getDailyClosing, getSales } from "@/actions/pos.action";
 import { getProducts } from "@/actions/product.action";
 import { getProductSummary } from "@/lib/utils";
+import { requireOwner } from "@/lib/auth";
+import { effectiveSaleAmount, effectiveSaleProfit } from "@/lib/sales";
+import { getProductExpiryAlerts } from "@/lib/product-expiry";
 import type {
   DashboardChannel,
   DashboardRecentItem,
@@ -54,10 +57,10 @@ function buildDailyChart(orders: Order[], sales: Sale[]) {
       }).format(day),
       sales:
         shippedOrders.reduce((sum, order) => sum + order.totalAmount, 0) +
-        daySales.reduce((sum, sale) => sum + sale.netAmount, 0),
+        daySales.reduce((sum, sale) => sum + effectiveSaleAmount(sale), 0),
       profit:
         shippedOrders.reduce((sum, order) => sum + order.profit, 0) +
-        daySales.reduce((sum, sale) => sum + sale.profit, 0)
+        daySales.reduce((sum, sale) => sum + effectiveSaleProfit(sale), 0)
     };
   });
 }
@@ -95,8 +98,8 @@ function buildTopProducts(orders: Order[], sales: Sale[]) {
 function buildSalesBreakdown(orders: Order[], sales: Sale[]): SalesBreakdown {
   const onlineSales = orders.reduce((sum, order) => sum + order.totalAmount, 0);
   const onlineProfit = orders.reduce((sum, order) => sum + order.profit, 0);
-  const posSales = sales.reduce((sum, sale) => sum + sale.netAmount, 0);
-  const posProfit = sales.reduce((sum, sale) => sum + sale.profit, 0);
+  const posSales = sales.reduce((sum, sale) => sum + effectiveSaleAmount(sale), 0);
+  const posProfit = sales.reduce((sum, sale) => sum + effectiveSaleProfit(sale), 0);
 
   return {
     onlineSales,
@@ -145,7 +148,7 @@ function buildRecentActivity(
           type: "POS",
           title: "ຂາຍໜ້າຮ້ານ",
           description: `${sale.items.length} ລາຍການ`,
-          amount: sale.netAmount,
+          amount: effectiveSaleAmount(sale),
           createdAt: sale.createdAt
         }));
 
@@ -157,6 +160,7 @@ function buildRecentActivity(
 export async function getDashboardStats(
   channelValue?: string
 ): Promise<DashboardStats> {
+  await requireOwner();
   const [orders, sales, products] = await Promise.all([
     getOrders(),
     getSales(),
@@ -208,6 +212,7 @@ export async function getDashboardStats(
     recentSales: channelSales.slice(0, 5),
     recentActivity: buildRecentActivity(channelOrders, channelSales, channel),
     tasks: {
+      expiryAlerts: getProductExpiryAlerts(products).length,
       pendingPackOrders: orders.filter((order) => order.status === "PENDING_PACK").length,
       codToShipOrders: orders.filter(
         (order) =>

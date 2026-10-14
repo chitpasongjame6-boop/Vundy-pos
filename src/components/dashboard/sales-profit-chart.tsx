@@ -22,33 +22,39 @@ export function SalesProfitChart({ data }: { data: DailyChartPoint[] }) {
   );
 
   if (!mounted) {
-    return <div className="h-72 w-full rounded-md bg-zinc-50" />;
+    return <div className="h-72 w-full animate-pulse rounded-xl bg-slate-100" />;
   }
 
   return (
-    <div className="h-72 w-full">
-      <ResponsiveContainer width="100%" height="100%">
+    <div className="h-72 min-w-0 w-full">
+      <ResponsiveContainer
+        width="100%"
+        height="100%"
+        minWidth={0}
+        initialDimension={{ width: 800, height: 288 }}
+      >
         <ComposedChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-          <CartesianGrid stroke="#e4e4e7" strokeDasharray="4 4" />
-          <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="#71717a" />
+          <CartesianGrid stroke="#e2e8f0" strokeDasharray="4 4" vertical={false} />
+          <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="#94a3b8" />
           <YAxis
             tick={{ fontSize: 12 }}
-            stroke="#71717a"
+            stroke="#94a3b8"
             tickFormatter={(value) => `${Number(value) / 1000}k`}
           />
           <Tooltip
             formatter={(value) => formatCurrency(Number(value))}
             contentStyle={{
-              borderRadius: 8,
-              borderColor: "#e4e4e7"
+              borderRadius: 12,
+              borderColor: "#e2e8f0",
+              boxShadow: "0 12px 30px rgba(15, 23, 42, 0.12)"
             }}
           />
-          <Bar dataKey="sales" name="ຍອດຂາຍ" fill="#0f766e" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="sales" name="ຍອດຂາຍ" fill="#6366f1" radius={[6, 6, 0, 0]} />
           <Line
             type="monotone"
             dataKey="profit"
             name="ກໍາໄລ"
-            stroke="#f97316"
+            stroke="#10b981"
             strokeWidth={3}
             dot={{ r: 3 }}
           />

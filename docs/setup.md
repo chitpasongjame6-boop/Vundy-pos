@@ -17,6 +17,7 @@
 ```bash
 npm install
 npm run prisma:generate
+npx prisma db push
 npm run dev
 ```
 
@@ -26,26 +27,27 @@ npm run dev
 
 ```env
 DATABASE_URL="mongodb+srv://USER:PASSWORD@HOST/DATABASE?retryWrites=true&w=majority"
+SESSION_SECRET="replace-with-at-least-32-random-characters"
 ```
 
 ຖ້າຍັງບໍ່ມີ `DATABASE_URL` ລະບົບຈະສ້າງ local dev storage ທີ່ `.local-data/stock-order-store.json`
 ໂດຍເລີ່ມຈາກ mock data ໃນ `src/lib/mock-data.ts`. ໂໝດນີ້ໃຊ້ທົດສອບປຸ່ມເພີ່ມສິນຄ້າ, ສ້າງອໍເດີ, ແກ້ໄຂ, ປ່ຽນສະຖານະ, ເພີ່ມສະຕ໋ອກ, ແລະລຶບໄດ້ກ່ອນຕໍ່ MongoDB.
 ຖ້າຕ້ອງການ reset ຂໍ້ມູນທົດສອບ ໃຫ້ປິດ dev server ແລ້ວລຶບໂຟນເດີ `.local-data`.
 
-## S3 Images
+## Cloudflare R2 Images
 
-ລະບົບ upload ຮູບສິນຄ້າ ແລະ logo ໃຊ້ S3 ເທົ່ານັ້ນ. ໃຫ້ຕັ້ງຄ່າ:
+ລະບົບ upload ຮູບສິນຄ້າ ແລະ logo ໃຊ້ Cloudflare R2. ໃຫ້ສ້າງ R2 API token ທີ່ມີສິດ Object Read & Write ແລ້ວຕັ້ງຄ່າ:
 
 ```env
-S3_BUCKET="your-bucket-name"
-S3_REGION="ap-southeast-1"
-S3_ACCESS_KEY_ID="your-access-key"
-S3_SECRET_ACCESS_KEY="your-secret-key"
-S3_PUBLIC_URL_PREFIX="https://cdn.example.com"
+R2_ACCOUNT_ID="your-cloudflare-account-id"
+R2_BUCKET_NAME="your-r2-bucket-name"
+R2_ACCESS_KEY_ID="your-r2-access-key-id"
+R2_SECRET_ACCESS_KEY="your-r2-secret-access-key"
+R2_PUBLIC_URL="https://images.example.com"
 ```
 
-ຖ້າໃຊ້ S3-compatible service ເຊັ່ນ Cloudflare R2, DigitalOcean Spaces, MinIO ໃຫ້ເພີ່ມ `S3_ENDPOINT` ແລະ `S3_FORCE_PATH_STYLE` ຕາມ provider.
+`R2_PUBLIC_URL` ຕ້ອງເປັນ custom domain ທີ່ຜູກກັບ bucket (ແນະນຳສຳລັບ production) ຫຼື public `r2.dev` URL. ຢ່າໃຊ້ API endpoint `r2.cloudflarestorage.com` ເປັນ Public URL.
 
 ## Node Version
 
-ເຄື່ອງທີ່ສ້າງໂປຣເຈັກໃຊ້ Node `20.11.0` ຈຶ່ງລັອກ Prisma ເປັນ `6.19.0` ເພາະ Prisma 7 ຕ້ອງໃຊ້ Node `20.19+`
+ໂປຣເຈັກຕ້ອງໃຊ້ Node `22.13.0` ຫຼືໃໝ່ກວ່າ. ກ່ອນ deploy ໃຫ້ຣັນ `npm run lint`, `npm run typecheck`, `npm test`, ແລະ `npm run build`.

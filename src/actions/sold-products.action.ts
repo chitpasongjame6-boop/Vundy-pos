@@ -3,6 +3,7 @@
 import { getOrders } from "@/actions/order.action";
 import { getSales } from "@/actions/pos.action";
 import { prisma } from "@/lib/prisma";
+import { requireOwner } from "@/lib/auth";
 import type {
   DashboardChannel,
   OrderItem,
@@ -33,6 +34,7 @@ export async function getSoldProducts(
   totalAmount: number;
   totalProfit: number;
 }> {
+  await requireOwner();
   const channel = parseChannel(filters?.channel);
   const search = filters?.search?.trim().toLowerCase();
   const dateRange = getDateRange(filters?.date);

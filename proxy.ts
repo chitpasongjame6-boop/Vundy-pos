@@ -6,14 +6,14 @@ import {
   sessionCookieName
 } from "@/lib/auth-config";
 
-export function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (pathname === "/api/health") {
     return NextResponse.next();
   }
 
-  const user = decodeSession(request.cookies.get(sessionCookieName)?.value ?? "");
+  const user = await decodeSession(request.cookies.get(sessionCookieName)?.value ?? "");
 
   if (!user && pathname !== "/login") {
     const loginUrl = new URL("/login", request.url);

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/input";
+import { EmptyState, FilterBar, MetricCard } from "@/components/ui/patterns";
 import {
   formatCurrency,
   formatDate,
@@ -47,9 +48,9 @@ export default async function SoldProductsPage({
         description="ເບິ່ງສິນຄ້າທີ່ຂາຍແລ້ວ ແຍກອອນລາຍ ຂາຍໜ້າຮ້ານ ຫຼື ລວມທັງໝົດ"
       />
 
-      <form className="mb-4 grid gap-3 md:grid-cols-[1fr_13rem_6rem_7rem_7rem_auto]">
+      <FilterBar className="md:grid-cols-[1fr_13rem_6rem_7rem_7rem_auto]">
         <label className="relative">
-          <Search className="pointer-events-none absolute left-3 top-3 h-5 w-5 text-zinc-400" />
+          <Search className="pointer-events-none absolute left-3 top-3 h-5 w-5 text-slate-400" />
           <Input
             name="search"
             defaultValue={params?.search ?? ""}
@@ -89,18 +90,18 @@ export default async function SoldProductsPage({
         <Button type="submit" className="w-full md:w-auto">
           ຄົ້ນຫາ
         </Button>
-      </form>
+      </FilterBar>
 
       {selectedDate ? (
-        <div className="mb-4 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-semibold text-zinc-700">
+        <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
           ສະແດງສິນຄ້າຂາຍຂອງວັນທີ {selectedDate}
         </div>
       ) : null}
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-3">
-        <SummaryCard label="ຈໍານວນທີ່ຂາຍ" value={`${data.totalQuantity}`} />
-        <SummaryCard label="ຍອດຂາຍ" value={formatCurrency(data.totalAmount)} />
-        <SummaryCard label="ກໍາໄລ" value={formatCurrency(data.totalProfit)} />
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <MetricCard label="ຈໍານວນທີ່ຂາຍ" value={`${data.totalQuantity}`} tone="sky" />
+        <MetricCard label="ຍອດຂາຍ" value={formatCurrency(data.totalAmount)} tone="indigo" />
+        <MetricCard label="ກໍາໄລ" value={formatCurrency(data.totalProfit)} tone="emerald" />
       </div>
 
       {data.items.length ? (
@@ -108,7 +109,7 @@ export default async function SoldProductsPage({
           {data.items.map((item) => (
             <Card key={`${item.productId}-${item.variantId ?? item.sku}`}>
               <CardContent className="grid grid-cols-[5.5rem_1fr] gap-3">
-                <div className="relative h-24 overflow-hidden rounded-md bg-zinc-100">
+                <div className="relative h-24 overflow-hidden rounded-xl bg-slate-100">
                   {item.imageUrl ? (
                     <Image
                       src={item.imageUrl}
@@ -118,7 +119,7 @@ export default async function SoldProductsPage({
                       sizes="88px"
                     />
                   ) : (
-                    <div className="flex h-full items-center justify-center text-zinc-400">
+                    <div className="flex h-full items-center justify-center text-slate-400">
                       <PackageCheck className="h-8 w-8" aria-hidden />
                     </div>
                   )}
@@ -126,11 +127,11 @@ export default async function SoldProductsPage({
                 <div className="min-w-0">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate font-bold text-zinc-950">
+                      <p className="truncate font-bold text-slate-950">
                         {item.name}
                       </p>
                       {item.variantName && !isDefaultVariantName(item.variantName) ? (
-                        <p className="truncate text-sm text-zinc-500">
+                        <p className="truncate text-sm text-slate-500">
                           {item.variantName}
                         </p>
                       ) : null}
@@ -139,19 +140,19 @@ export default async function SoldProductsPage({
                       x{item.quantity}
                     </Badge>
                   </div>
-                  <p className="mt-1 text-sm text-zinc-500">SKU: {item.sku}</p>
+                  <p className="mt-1 text-sm text-slate-500">SKU: {item.sku}</p>
                   <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                    <div className="rounded-md bg-zinc-50 p-2">
-                      <p className="text-xs text-zinc-500">ລາຄາຫຼ້າສຸດ</p>
+                    <div className="rounded-xl bg-slate-50 p-2">
+                      <p className="text-xs text-slate-500">ລາຄາຫຼ້າສຸດ</p>
                       <p className="font-bold">{formatCurrency(item.latestPrice)}</p>
                     </div>
-                    <div className="rounded-md bg-zinc-50 p-2">
-                      <p className="text-xs text-zinc-500">ຍອດຂາຍລວມ</p>
+                    <div className="rounded-xl bg-slate-50 p-2">
+                      <p className="text-xs text-slate-500">ຍອດຂາຍລວມ</p>
                       <p className="font-bold">{formatCurrency(item.totalAmount)}</p>
                     </div>
                   </div>
                   <div className="mt-2 flex items-center justify-between text-sm">
-                    <span className="text-zinc-500">
+                    <span className="text-slate-500">
                       {formatDate(new Date(item.lastSoldAt))}
                     </span>
                     <span className="font-bold text-emerald-700">
@@ -164,26 +165,12 @@ export default async function SoldProductsPage({
           ))}
         </div>
       ) : (
-        <Card>
-          <CardContent>
-            <p className="text-sm text-zinc-500">
-              ບໍ່ພົບສິນຄ້າທີ່ຂາຍແລ້ວໃນຊ່ອງທາງ {channelLabels[data.channel]}
-            </p>
-          </CardContent>
-        </Card>
+        <EmptyState
+          title="ບໍ່ພົບສິນຄ້າທີ່ຂາຍແລ້ວ"
+          description={`ບໍ່ມີລາຍການໃນຊ່ອງທາງ ${channelLabels[data.channel]} ຕາມເງື່ອນໄຂທີ່ເລືອກ`}
+        />
       )}
     </section>
-  );
-}
-
-function SummaryCard({ label, value }: { label: string; value: string }) {
-  return (
-    <Card>
-      <CardContent>
-        <p className="text-sm text-zinc-500">{label}</p>
-        <p className="mt-1 text-2xl font-bold text-zinc-950">{value}</p>
-      </CardContent>
-    </Card>
   );
 }
 

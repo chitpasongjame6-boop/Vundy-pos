@@ -2,8 +2,11 @@
 
 import { getOrders } from "@/actions/order.action";
 import { getSales } from "@/actions/pos.action";
+import { getExpenses } from "@/actions/inventory.action";
 import { formatDateInput } from "@/lib/document-number";
 import { formatProductVariantName } from "@/lib/utils";
+import { requireOwner } from "@/lib/auth";
+import { effectiveSaleAmount, effectiveSaleProfit, isRevenueSale } from "@/lib/sales";
 import type { Order, Sale, SalePaymentMethod } from "@/types";
 
 export type ReportPeriod = "DAY" | "MONTH";
@@ -18,6 +21,8 @@ export type DetailedReport = {
   posProfit: number;
   totalSales: number;
   totalProfit: number;
+  expenseAmount: number;
+  netProfit: number;
   cashAmount: number;
   transferAmount: number;
   otherAmount: number;
@@ -40,17 +45,19 @@ export async function getDetailedReport(input?: {
   period?: string;
   date?: string;
 }): Promise<DetailedReport> {
+  await requireOwner();
   const period = input?.period === "MONTH" ? "MONTH" : "DAY";
   const date = normalizeDate(input?.date, period);
   const range = getReportRange(date, period);
-  const [orders, sales] = await Promise.all([
+  const [orders, sales, expenses] = await Promise.all([
     getOrders(),
-    getSales({ includeInactive: true })
+    getSales({ includeInactive: true }),
+    getExpenses()
   ]);
   const rangeOrders = orders.filter((order) => inRange(order.createdAt, range));
   const rangeSales = sales.filter((sale) => inRange(sale.createdAt, range));
   const shippedOrders = rangeOrders.filter((order) => order.status === "SHIPPED");
-  const activeSales = rangeSales.filter((sale) => !sale.status || sale.status === "ACTIVE");
+  const activeSales = rangeSales.filter(isRevenueSale);
   const payment = summarizePayments(activeSales);
   const codAmount = shippedOrders
     .filter((order) => order.paymentStatus === "COD")
@@ -58,8 +65,11 @@ export async function getDetailedReport(input?: {
   const topProducts = buildTopProducts(shippedOrders, activeSales);
   const onlineSales = shippedOrders.reduce((sum, order) => sum + order.totalAmount, 0);
   const onlineProfit = shippedOrders.reduce((sum, order) => sum + order.profit, 0);
-  const posSales = activeSales.reduce((sum, sale) => sum + sale.netAmount, 0);
-  const posProfit = activeSales.reduce((sum, sale) => sum + sale.profit, 0);
+  const posSales = activeSales.reduce((sum, sale) => sum + effectiveSaleAmount(sale), 0);
+  const posProfit = activeSales.reduce((sum, sale) => sum + effectiveSaleProfit(sale), 0);
+  const expenseAmount = expenses
+    .filter((expense) => inRange(expense.expenseAt, range))
+    .reduce((sum, expense) => sum + expense.amount, 0);
 
   return {
     period,
@@ -71,6 +81,8 @@ export async function getDetailedReport(input?: {
     posProfit,
     totalSales: onlineSales + posSales,
     totalProfit: onlineProfit + posProfit,
+    expenseAmount,
+    netProfit: onlineProfit + posProfit - expenseAmount,
     cashAmount: payment.CASH,
     transferAmount: payment.TRANSFER,
     otherAmount: payment.OTHER,
@@ -118,10 +130,16 @@ function inRange(date: Date, range: { start: Date; end: Date }) {
 function summarizePayments(sales: Sale[]) {
   return sales.reduce<Record<SalePaymentMethod, number>>(
     (summary, sale) => {
-      summary[sale.paymentMethod] += sale.netAmount;
+      if (sale.paymentMethod === "SPLIT" && sale.payments?.length) {
+        for (const payment of sale.payments) {
+          summary[payment.method] += payment.amount;
+        }
+      } else {
+        summary[sale.paymentMethod] += effectiveSaleAmount(sale);
+      }
       return summary;
     },
-    { CASH: 0, TRANSFER: 0, OTHER: 0 }
+    { CASH: 0, TRANSFER: 0, OTHER: 0, SPLIT: 0 }
   );
 }
 

@@ -15,6 +15,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { EmptyState, MetricCard } from "@/components/ui/patterns";
+import { ExpiryAlertList } from "@/components/products/expiry-alert-list";
+import { getProductExpiryAlerts, getShopDate } from "@/lib/product-expiry";
 import {
   formatCurrency,
   formatDate,
@@ -49,7 +52,10 @@ export default async function AlertsPage() {
     .filter(({ variant }) => variant.stock <= variant.lowStockAlert)
     .sort((a, b) => a.variant.stock - b.variant.stock);
   const outOfStockRows = stockRows.filter((row) => row.status === "OUT");
+  const today = getShopDate();
+  const expiryAlerts = getProductExpiryAlerts(products, today);
   const totalAlerts =
+    expiryAlerts.length +
     pendingPackOrders.length +
     codToShipOrders.length +
     stockRows.length +
@@ -60,20 +66,23 @@ export default async function AlertsPage() {
     <section>
       <PageHeader
         title="ແຈ້ງເຕືອນລວມ"
-        description="ລວມວຽກທີ່ຕ້ອງຕິດຕາມ: ລໍຖ້າແພັກ, COD, ສະຕ໋ອກ, ປິດຍອດ ແລະ ອໍເດີຕີກັບ"
+        description="ລວມວຽກທີ່ຕ້ອງຕິດຕາມ: ວັນໝົດອາຍຸ, ລໍຖ້າແພັກ, COD, ສະຕ໋ອກ ແລະ ປິດຍອດ"
       />
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <SummaryCard label="ແຈ້ງເຕືອນທັງໝົດ" value={totalAlerts} />
-        <SummaryCard label="ລໍຖ້າແພັກ" value={pendingPackOrders.length} tone="amber" />
-        <SummaryCard label="COD ຍັງບໍ່ສົ່ງ" value={codToShipOrders.length} tone="sky" />
-        <SummaryCard label="ສະຕ໋ອກໝົດ" value={outOfStockRows.length} tone="rose" />
-        <SummaryCard
+      <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-6">
+        <MetricCard label="ແຈ້ງເຕືອນທັງໝົດ" value={totalAlerts} tone="indigo" />
+        <MetricCard label="ເຕືອນວັນໝົດອາຍຸ" value={expiryAlerts.length} tone="rose" />
+        <MetricCard label="ລໍຖ້າແພັກ" value={pendingPackOrders.length} tone="amber" />
+        <MetricCard label="COD ຍັງບໍ່ສົ່ງ" value={codToShipOrders.length} tone="sky" />
+        <MetricCard label="ສະຕ໋ອກໝົດ" value={outOfStockRows.length} tone="rose" />
+        <MetricCard
           label="ປິດຍອດມື້ນີ້"
           value={dailyClosing.closing ? "ປິດແລ້ວ" : "ຍັງບໍ່ປິດ"}
           tone={dailyClosing.closing ? "emerald" : "amber"}
         />
       </div>
+
+      <ExpiryAlertList alerts={expiryAlerts} today={today} />
 
       <div className="grid gap-4 xl:grid-cols-2">
         <AlertSection
@@ -105,11 +114,11 @@ export default async function AlertsPage() {
               {stockRows.slice(0, 8).map(({ product, variant, status }) => (
                 <div
                   key={`${product.id}-${variant.id}`}
-                  className="grid gap-3 rounded-md border border-zinc-200 p-3 md:grid-cols-[1fr_auto]"
+                  className="grid gap-3 rounded-xl border border-slate-200 p-3 md:grid-cols-[1fr_auto]"
                 >
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-bold text-zinc-950">{product.name}</p>
+                      <p className="font-bold text-slate-950">{product.name}</p>
                       <Badge
                         className={
                           status === "OUT"
@@ -120,10 +129,10 @@ export default async function AlertsPage() {
                         {status === "OUT" ? "ໝົດສະຕ໋ອກ" : "ໃກ້ໝົດ"}
                       </Badge>
                     </div>
-                    <p className="text-sm text-zinc-500">
+                    <p className="text-sm text-slate-500">
                       {formatProductVariantName(product.name, variant.name)} · SKU: {variant.sku}
                     </p>
-                    <p className="mt-1 text-sm font-semibold text-zinc-950">
+                    <p className="mt-1 text-sm font-semibold text-slate-950">
                       ສະຕ໋ອກ {variant.stock} / ແຈ້ງເຕືອນ {variant.lowStockAlert}
                     </p>
                   </div>
@@ -158,14 +167,14 @@ export default async function AlertsPage() {
           actionLabel="ໄປປິດຍອດ"
         >
           {dailyClosing.closing ? (
-            <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3">
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
               <p className="font-bold text-emerald-800">ປິດຍອດມື້ນີ້ແລ້ວ</p>
               <p className="text-sm text-emerald-700">
                 {dailyClosing.closing.closingNo ?? dailyClosing.closing.id}
               </p>
             </div>
           ) : (
-            <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
               <p className="font-bold text-amber-800">ຍັງບໍ່ປິດຍອດມື້ນີ້</p>
               <p className="text-sm text-amber-700">
                 ຍອດ POS ມື້ນີ້ {formatCurrency(dailyClosing.summary.totalAmount)}
@@ -188,36 +197,6 @@ export default async function AlertsPage() {
         </AlertSection>
       </div>
     </section>
-  );
-}
-
-function SummaryCard({
-  label,
-  value,
-  tone = "zinc"
-}: {
-  label: string;
-  value: string | number;
-  tone?: "zinc" | "amber" | "rose" | "sky" | "emerald";
-}) {
-  const color =
-    tone === "amber"
-      ? "text-amber-700"
-      : tone === "rose"
-        ? "text-rose-700"
-        : tone === "sky"
-          ? "text-sky-700"
-          : tone === "emerald"
-            ? "text-emerald-700"
-            : "text-zinc-950";
-
-  return (
-    <Card>
-      <CardContent>
-        <p className="text-sm text-zinc-500">{label}</p>
-        <p className={`mt-1 text-2xl font-bold ${color}`}>{value}</p>
-      </CardContent>
-    </Card>
   );
 }
 
@@ -244,7 +223,7 @@ function AlertSection({
           </CardTitle>
           <Link
             href={actionHref}
-            className="text-sm font-semibold text-zinc-600 hover:text-zinc-950"
+            className="text-sm font-semibold text-slate-600 hover:text-slate-950"
           >
             {actionLabel}
           </Link>
@@ -278,15 +257,15 @@ function OrderRows({
           href={`/orders/history?search=${encodeURIComponent(
             order.orderNo ?? order.id
           )}`}
-          className="block rounded-md border border-zinc-200 p-3 hover:bg-zinc-50"
+          className="block rounded-xl border border-slate-200 p-3 hover:bg-slate-50"
         >
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="truncate font-bold text-zinc-950">{order.customerName}</p>
-              <p className="text-xs font-semibold text-zinc-500">
+              <p className="truncate font-bold text-slate-950">{order.customerName}</p>
+              <p className="text-xs font-semibold text-slate-500">
                 {order.orderNo ?? order.id.slice(-8).toUpperCase()}
               </p>
-              <p className="mt-1 text-sm text-zinc-500">
+              <p className="mt-1 text-sm text-slate-500">
                 {order.phone} · {order.shippingCompany}
               </p>
             </div>
@@ -295,17 +274,17 @@ function OrderRows({
             </Badge>
           </div>
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm">
-            <span className="text-zinc-500">
+            <span className="text-slate-500">
               {formatDate(new Date(order.createdAt))}
             </span>
             {showAmount ? (
-              <strong className="text-zinc-950">
+              <strong className="text-slate-950">
                 COD {formatCurrency(order.totalAmount)}
               </strong>
             ) : null}
           </div>
           {showReturn ? (
-            <p className="mt-2 rounded-md bg-rose-50 px-2 py-1 text-sm text-rose-700">
+            <p className="mt-2 rounded-xl bg-rose-50 px-2 py-1 text-sm text-rose-700">
               {order.returnReason || "ບໍ່ລະບຸເຫດຜົນ"}
             </p>
           ) : null}
@@ -316,9 +295,5 @@ function OrderRows({
 }
 
 function EmptyText({ text }: { text: string }) {
-  return (
-    <div className="rounded-md border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500">
-      {text}
-    </div>
-  );
+  return <EmptyState title={text} />;
 }

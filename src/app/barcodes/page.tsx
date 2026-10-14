@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { EmptyState } from "@/components/ui/patterns";
 
 type PageProps = {
   searchParams?: Promise<{
@@ -72,7 +73,7 @@ export default async function BarcodesPage({ searchParams }: PageProps) {
           title="ພິມສະຕິກເກີ Barcode"
           description="ປ້ອນລະຫັດ barcode ເອງເພື່ອພິມສະເພາະສິນຄ້າທີ່ຕ້ອງການ"
         />
-        <div className="mb-4 grid gap-3 lg:grid-cols-[1fr_auto]">
+        <div className="mb-5 grid gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm lg:grid-cols-[1fr_auto] lg:items-end">
           <ManualBarcodeForm params={params} />
           <BarcodePrintButton disabled={!labels.length} />
         </div>
@@ -83,13 +84,13 @@ export default async function BarcodesPage({ searchParams }: PageProps) {
           {labels.map((label) => (
             <Card
               key={label.id}
-              className="barcode-label break-inside-avoid overflow-hidden print:rounded-none print:border-zinc-950 print:shadow-none"
+              className="barcode-label break-inside-avoid overflow-hidden print:rounded-none print:border-slate-950 print:shadow-none"
             >
               <CardContent className="space-y-1 p-3 text-center print:p-2">
-                <p className="line-clamp-1 text-sm font-bold text-zinc-950">
+                <p className="line-clamp-1 text-sm font-bold text-slate-950">
                   {label.name}
                 </p>
-                <p className="line-clamp-1 text-xs text-zinc-600">
+                <p className="line-clamp-1 text-xs text-slate-600">
                   {label.variantName}
                 </p>
                 <Code39Barcode value={label.barcodeValue} />
@@ -99,13 +100,10 @@ export default async function BarcodesPage({ searchParams }: PageProps) {
           ))}
         </div>
       ) : (
-        <Card>
-          <CardContent>
-            <p className="text-sm text-zinc-500">
-              ກະລຸນາປ້ອນຊື່ ແລະລະຫັດ barcode ເພື່ອສ້າງສະຕິກເກີ
-            </p>
-          </CardContent>
-        </Card>
+        <EmptyState
+          title="ຍັງບໍ່ມີສະຕິກເກີ Barcode"
+          description="ປ້ອນຊື່ສິນຄ້າ ແລະ ລະຫັດ Barcode ດ້ານເທິງ ແລ້ວກົດສ້າງ"
+        />
       )}
     </section>
   );
@@ -121,25 +119,34 @@ function ManualBarcodeForm({
   };
 }) {
   return (
-    <form className="grid gap-3 md:grid-cols-[1fr_12rem_12rem_auto]">
-      <Input
-        name="manualName"
-        defaultValue={params?.manualName ?? ""}
-        placeholder="ຊື່ສິນຄ້າ"
-        required
-      />
-      <Input
-        name="manualVariant"
-        defaultValue={params?.manualVariant ?? ""}
-        placeholder="ຂະໜາດ / ຮຸ່ນ"
-      />
-      <Input
-        name="manualCode"
-        defaultValue={params?.manualCode ?? ""}
-        placeholder="ລະຫັດ barcode"
-        required
-      />
-      <Button type="submit" variant="secondary">
+    <form className="grid min-w-0 gap-3 md:grid-cols-[1fr_12rem_12rem_auto] md:items-end">
+      <label className="min-w-0 space-y-1.5">
+        <span className="text-sm font-bold text-slate-700">ຊື່ສິນຄ້າ</span>
+        <Input
+          name="manualName"
+          defaultValue={params?.manualName ?? ""}
+          placeholder="ຕົວຢ່າງ: ນໍ້າຫອມ"
+          required
+        />
+      </label>
+      <label className="min-w-0 space-y-1.5">
+        <span className="text-sm font-bold text-slate-700">ຂະໜາດ / ຮຸ່ນ</span>
+        <Input
+          name="manualVariant"
+          defaultValue={params?.manualVariant ?? ""}
+          placeholder="50 ml"
+        />
+      </label>
+      <label className="min-w-0 space-y-1.5">
+        <span className="text-sm font-bold text-slate-700">ລະຫັດ Barcode</span>
+        <Input
+          name="manualCode"
+          defaultValue={params?.manualCode ?? ""}
+          placeholder="ຕົວຢ່າງ: 885001"
+          required
+        />
+      </label>
+      <Button type="submit" variant="secondary" className="w-full md:w-auto">
         <PlusSquare className="h-4 w-4" aria-hidden />
         ສ້າງ
       </Button>

@@ -3,6 +3,7 @@ import Image from "next/image";
 import type { ReactNode } from "react";
 import {
   AlertTriangle,
+  CalendarClock,
   ClipboardCheck,
   DollarSign,
   PackageX,
@@ -37,14 +38,14 @@ export default async function DashboardPage({
 
   return (
     <section>
-      <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <PageHeader
           title="ໜ້າລວມ"
           description="ພາບລວມຍອດຂາຍ ກໍາໄລ ອໍເດີ ແລະ ສະຕ໋ອກທີ່ຕ້ອງຕິດຕາມ"
         />
-        <form className="grid gap-2 sm:grid-cols-[14rem_auto] lg:mb-5">
+        <form className="mb-6 grid gap-2 rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm sm:grid-cols-[14rem_auto]">
           <label className="space-y-1.5">
-            <span className="text-sm font-semibold text-zinc-700">
+            <span className="text-xs font-bold text-slate-500">
               ປະເພດຍອດຂາຍ
             </span>
             <Select name="channel" defaultValue={selectedChannel}>
@@ -60,36 +61,41 @@ export default async function DashboardPage({
           </div>
         </form>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 [&>*:last-child]:col-span-2 xl:grid-cols-5 xl:[&>*:last-child]:col-span-1">
         <StatCard
           label="ຍອດຂາຍມື້ນີ້"
           value={stats.todaySales}
           icon={<DollarSign className="h-5 w-5" aria-hidden />}
+          tone="indigo"
         />
         <StatCard
           label="ກໍາໄລມື້ນີ້"
           value={stats.todayProfit}
           icon={<TrendingUp className="h-5 w-5" aria-hidden />}
+          tone="emerald"
         />
         <StatCard
           label="ລາຍການຂາຍມື້ນີ້"
           value={stats.todayOrders}
           currency={false}
           icon={<ShoppingCart className="h-5 w-5" aria-hidden />}
+          tone="sky"
         />
         <StatCard
           label="ຍອດຂາຍເດືອນນີ້"
           value={stats.monthSales}
           icon={<DollarSign className="h-5 w-5" aria-hidden />}
+          tone="violet"
         />
         <StatCard
           label="ກໍາໄລເດືອນນີ້"
           value={stats.monthProfit}
           icon={<TrendingUp className="h-5 w-5" aria-hidden />}
+          tone="amber"
         />
       </div>
 
-      <Card className="mt-4">
+      <Card className="mt-5">
         <CardHeader>
           <CardTitle>ແຍກຍອດຂາຍມື້ນີ້</CardTitle>
         </CardHeader>
@@ -115,11 +121,18 @@ export default async function DashboardPage({
         </CardContent>
       </Card>
 
-      <Card className="mt-4">
+      <Card className="mt-5">
         <CardHeader>
           <CardTitle>ສິ່ງທີ່ຕ້ອງຕິດຕາມ</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-5">
+        <CardContent className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+          <TaskLink
+            href="/alerts#expiry"
+            icon={<CalendarClock className="h-5 w-5" aria-hidden />}
+            label="ເຕືອນວັນໝົດອາຍຸ"
+            value={stats.tasks.expiryAlerts}
+            tone={stats.tasks.expiryAlerts > 0 ? "rose" : "zinc"}
+          />
           <TaskLink
             href="/orders?status=PENDING_PACK"
             icon={<ShoppingCart className="h-5 w-5" aria-hidden />}
@@ -158,7 +171,7 @@ export default async function DashboardPage({
         </CardContent>
       </Card>
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-[2fr_1fr]">
+      <div className="mt-5 grid gap-5 xl:grid-cols-[2fr_1fr]">
         <Card>
           <CardHeader>
             <CardTitle>ກຣາຟຍອດຂາຍ ແລະ ກໍາໄລລາຍວັນ</CardTitle>
@@ -176,9 +189,9 @@ export default async function DashboardPage({
               stats.lowStockProducts.map((product) => (
                 <div
                   key={product.id}
-                  className="grid grid-cols-[3rem_1fr_auto] items-center gap-3 rounded-md border border-zinc-200 p-3"
+                  className="grid grid-cols-[3rem_1fr_auto] items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3 transition hover:bg-white hover:shadow-sm"
                 >
-                  <div className="relative h-12 w-12 overflow-hidden rounded-md bg-zinc-100">
+                  <div className="relative h-12 w-12 overflow-hidden rounded-xl bg-slate-100">
                     {product.imageUrl ? (
                       <Image
                         src={product.imageUrl}
@@ -188,14 +201,14 @@ export default async function DashboardPage({
                         className="object-cover"
                       />
                     ) : (
-                      <div className="flex h-full items-center justify-center text-xs font-bold text-zinc-400">
+                      <div className="flex h-full items-center justify-center text-xs font-bold text-slate-400">
                         VL
                       </div>
                     )}
                   </div>
                   <div className="min-w-0">
-                    <p className="font-semibold text-zinc-950">{product.name}</p>
-                    <p className="truncate text-sm text-zinc-500">{product.sku}</p>
+                    <p className="font-semibold text-slate-950">{product.name}</p>
+                    <p className="truncate text-sm text-slate-500">{product.sku}</p>
                   </div>
                   <Badge className="border-rose-200 bg-rose-100 text-rose-800">
                     {product.stock}
@@ -203,13 +216,13 @@ export default async function DashboardPage({
                 </div>
               ))
             ) : (
-              <p className="text-sm text-zinc-500">ຍັງບໍ່ມີສິນຄ້າໃກ້ໝົດ</p>
+              <p className="text-sm text-slate-500">ຍັງບໍ່ມີສິນຄ້າໃກ້ໝົດ</p>
             )}
           </CardContent>
         </Card>
       </div>
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-2">
+      <div className="mt-5 grid gap-5 xl:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle>ສິນຄ້າຂາຍດີ Top 5 - {channelLabels[stats.channel]}</CardTitle>
@@ -219,22 +232,22 @@ export default async function DashboardPage({
               stats.topProducts.map((product, index) => (
                 <div
                   key={product.productId}
-                  className="grid grid-cols-[2rem_1fr_auto] items-center gap-3 rounded-md border border-zinc-200 p-3"
+                  className="grid grid-cols-[2rem_1fr_auto] items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 transition hover:bg-white hover:shadow-sm"
                 >
-                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-teal-50 text-sm font-bold text-teal-700">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-100 text-sm font-extrabold text-indigo-700">
                     {index + 1}
                   </div>
                   <div>
-                    <p className="font-semibold text-zinc-950">{product.name}</p>
-                    <p className="text-sm text-zinc-500">ຂາຍ {product.quantity} ຊິ້ນ</p>
+                    <p className="font-semibold text-slate-950">{product.name}</p>
+                    <p className="text-sm text-slate-500">ຂາຍ {product.quantity} ຊິ້ນ</p>
                   </div>
-                  <strong className="text-sm text-zinc-950">
+                  <strong className="text-sm text-slate-950">
                     {formatCurrency(product.totalAmount)}
                   </strong>
                 </div>
               ))
             ) : (
-              <p className="text-sm text-zinc-500">ຍັງບໍ່ມີຂໍ້ມູນຂາຍ</p>
+              <p className="text-sm text-slate-500">ຍັງບໍ່ມີຂໍ້ມູນຂາຍ</p>
             )}
           </CardContent>
         </Card>
@@ -247,11 +260,11 @@ export default async function DashboardPage({
               stats.recentActivity.map((item) => (
                 <div
                   key={`${item.type}-${item.id}`}
-                  className="flex items-center justify-between gap-3 rounded-md border border-zinc-200 p-3"
+                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 transition hover:bg-white hover:shadow-sm"
                 >
                   <div>
-                    <p className="font-semibold text-zinc-950">{item.title}</p>
-                    <p className="text-sm text-zinc-500">
+                    <p className="font-semibold text-slate-950">{item.title}</p>
+                    <p className="text-sm text-slate-500">
                       {item.description} · {formatCurrency(item.amount)}
                     </p>
                   </div>
@@ -260,14 +273,14 @@ export default async function DashboardPage({
                       {statusConfig[item.status].label}
                     </Badge>
                   ) : (
-                    <Badge className="border-teal-200 bg-teal-100 text-teal-800">
+                    <Badge className="border-indigo-200 bg-indigo-100 text-indigo-800">
                       POS
                     </Badge>
                   )}
                 </div>
               ))
             ) : (
-              <p className="text-sm text-zinc-500">ຍັງບໍ່ມີລາຍການ</p>
+              <p className="text-sm text-slate-500">ຍັງບໍ່ມີລາຍການ</p>
             )}
           </CardContent>
         </Card>
@@ -292,17 +305,17 @@ function SalesBreakdownBlock({
   strong?: boolean;
 }) {
   return (
-    <div className="rounded-md border border-zinc-200 p-3">
-      <p className="text-sm font-bold text-zinc-950">{label}</p>
+    <div className={strong ? "rounded-xl border border-indigo-200 bg-indigo-50/70 p-4" : "rounded-xl border border-slate-200 bg-slate-50/70 p-4"}>
+      <p className="text-sm font-bold text-slate-950">{label}</p>
       <div className="mt-3 grid grid-cols-2 gap-3">
         <div>
-          <p className="text-xs text-zinc-500">ຍອດຂາຍ</p>
+          <p className="text-xs text-slate-500">ຍອດຂາຍ</p>
           <p className={strong ? "text-lg font-bold" : "font-bold"}>
             {formatCurrency(sales)}
           </p>
         </div>
         <div>
-          <p className="text-xs text-zinc-500">ກໍາໄລ</p>
+          <p className="text-xs text-slate-500">ກໍາໄລ</p>
           <p
             className={
               strong
@@ -338,12 +351,12 @@ function TaskLink({
         ? "text-amber-700 bg-amber-50 border-amber-200"
         : tone === "emerald"
           ? "text-emerald-700 bg-emerald-50 border-emerald-200"
-          : "text-zinc-700 bg-zinc-50 border-zinc-200";
+          : "text-slate-700 bg-slate-50 border-slate-200";
 
   return (
     <Link
       href={href}
-      className={`rounded-md border p-3 transition hover:border-zinc-400 ${toneClass}`}
+      className={`rounded-xl border p-3.5 transition-all hover:-translate-y-0.5 hover:shadow-md ${toneClass}`}
     >
       <div className="mb-3 flex items-center justify-between gap-2">
         <span>{icon}</span>

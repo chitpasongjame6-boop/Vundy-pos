@@ -24,28 +24,80 @@ enum SalePaymentMethod {
   CASH
   TRANSFER
   OTHER
+  SPLIT
 }
 
 enum SaleStatus {
   ACTIVE
+  PARTIALLY_RETURNED
   CANCELLED
   RETURNED
 }
 
+enum ShiftStatus {
+  OPEN
+  CLOSED
+}
+
+enum CashMovementType {
+  CASH_IN
+  CASH_OUT
+}
+
+enum StockMovementType {
+  OPENING
+  SALE
+  SALE_RETURN
+  PURCHASE_RECEIPT
+  ADJUSTMENT_IN
+  ADJUSTMENT_OUT
+  DAMAGED
+  EXCHANGE
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  ORDERED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+model Promotion {
+  id        String @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  kind      String
+  value     Int
+  targets   PromotionTarget[]
+  startsAt  DateTime
+  endsAt    DateTime
+  isActive  Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, endsAt])
+  @@map("promotions")
+}
+
+type PromotionTarget {
+  productId String
+  variantId String
+}
+
 model Product {
-  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  id            String           @id @default(auto()) @map("_id") @db.ObjectId
   name          String
-  sku           String   @unique
+  sku           String           @unique
   category      String
   costPrice     Int
   sellPrice     Int
   stock         Int
-  lowStockAlert Int      @default(5)
+  lowStockAlert Int              @default(5)
   imageUrl      String?
-  isActive      Boolean  @default(true)
+  isActive      Boolean          @default(true)
   variants      ProductVariant[]
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
 
   @@index([category])
   @@index([isActive])
@@ -54,7 +106,7 @@ model Product {
 }
 
 model Order {
-  id              String      @id @default(auto()) @map("_id") @db.ObjectId
+  id              String        @id @default(auto()) @map("_id") @db.ObjectId
   orderNo         String?
   customerName    String
   phone           String
@@ -63,7 +115,7 @@ model Order {
   shippingCompany String
   pickupBranch    String?
   paymentStatus   PaymentStatus @default(PAID)
-  status          OrderStatus @default(PENDING_PACK)
+  status          OrderStatus   @default(PENDING_PACK)
   items           OrderItem[]
   totalAmount     Int
   totalCost       Int
@@ -73,8 +125,8 @@ model Order {
   returnNote      String?
   returnedAt      DateTime?
   restockedAt     DateTime?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
   @@index([createdAt])
   @@index([status])
@@ -96,37 +148,53 @@ model Category {
 }
 
 model Sale {
-  id            String            @id @default(auto()) @map("_id") @db.ObjectId
-  saleNo        String?
-  cashierId     String?
-  cashierName   String?
-  memberId      String?
-  memberName    String?
-  memberPhone   String?
+  id             String            @id @default(auto()) @map("_id") @db.ObjectId
+  saleNo         String?
+  cashierId      String?
+  cashierName    String?
+  memberId       String?
+  memberName     String?
+  memberPhone    String?
   memberTierName String?
   memberDiscount Int?
-  status        SaleStatus        @default(ACTIVE)
-  items         SaleItem[]
-  totalAmount   Int
-  totalCost     Int
-  profit        Int
-  discount      Int               @default(0)
-  netAmount     Int
-  paymentMethod SalePaymentMethod @default(CASH)
+  status         SaleStatus        @default(ACTIVE)
+  items          SaleItem[]
+  totalAmount    Int
+  totalCost      Int
+  profit         Int
+  discount       Int               @default(0)
+  netAmount      Int
+  paymentMethod  SalePaymentMethod @default(CASH)
+  payments       SalePayment[]
+  paymentReference String?
   receivedAmount Int?
   changeAmount   Int?
+  taxRate        Int?
+  taxAmount      Int?
+  refundAmount   Int?
+  returnedCost   Int?
+  idempotencyKey String?           @unique
+  branchId       String?
+  branchName     String?
+  registerId     String?
+  registerName   String?
+  shiftId        String?
   voidReason     String?
   voidNote       String?
+  approvedById   String?
+  approvedByName String?
   voidedAt       DateTime?
   restockedAt    DateTime?
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
 
   @@index([createdAt])
   @@index([status])
   @@index([paymentMethod])
   @@index([saleNo])
   @@index([memberPhone])
+  @@index([shiftId])
+  @@index([branchId])
   @@map("sales")
 }
 
@@ -143,6 +211,10 @@ model DailyClosing {
   countedCash    Int
   cashDifference Int
   note           String?
+  closedById     String?
+  closedByName   String?
+  approvedById   String?
+  approvedByName String?
   closedAt       DateTime @default(now())
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -150,6 +222,259 @@ model DailyClosing {
   @@index([date])
   @@index([closedAt])
   @@map("daily_closings")
+}
+
+model Branch {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  code      String   @unique
+  name      String
+  address   String?
+  phone     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@map("branches")
+}
+
+model Register {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  branchId  String
+  code      String   @unique
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([branchId])
+  @@index([isActive])
+  @@map("registers")
+}
+
+model CashShift {
+  id             String      @id @default(auto()) @map("_id") @db.ObjectId
+  shiftNo        String      @unique
+  branchId       String?
+  branchName     String?
+  registerId     String?
+  registerName   String?
+  cashierId      String
+  cashierName    String
+  status         ShiftStatus @default(OPEN)
+  openingCash    Int
+  expectedCash   Int?
+  countedCash    Int?
+  cashDifference Int?
+  note           String?
+  openedAt       DateTime    @default(now())
+  closedAt       DateTime?
+  closedById     String?
+  closedByName   String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@index([status])
+  @@index([cashierId])
+  @@index([openedAt])
+  @@map("cash_shifts")
+}
+
+model CashMovement {
+  id        String           @id @default(auto()) @map("_id") @db.ObjectId
+  shiftId   String
+  type      CashMovementType
+  amount    Int
+  reason    String
+  note      String?
+  userId    String
+  userName  String
+  createdAt DateTime         @default(now())
+
+  @@index([shiftId])
+  @@index([createdAt])
+  @@map("cash_movements")
+}
+
+model Expense {
+  id            String            @id @default(auto()) @map("_id") @db.ObjectId
+  expenseNo     String            @unique
+  category      String
+  amount        Int
+  paymentMethod SalePaymentMethod
+  description   String
+  note          String?
+  shiftId       String?
+  userId        String
+  userName      String
+  expenseAt     DateTime          @default(now())
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([expenseAt])
+  @@index([category])
+  @@map("expenses")
+}
+
+model SaleReturn {
+  id              String            @id @default(auto()) @map("_id") @db.ObjectId
+  returnNo        String            @unique
+  saleId          String
+  saleNo          String?
+  items           SaleReturnItem[]
+  refundAmount    Int
+  returnedCost    Int
+  paymentMethod   SalePaymentMethod
+  reason          String
+  note            String?
+  processedById   String
+  processedByName String
+  approvedById    String?
+  approvedByName  String?
+  createdAt       DateTime          @default(now())
+
+  @@index([saleId])
+  @@index([createdAt])
+  @@map("sale_returns")
+}
+
+model StockMovement {
+  id            String            @id @default(auto()) @map("_id") @db.ObjectId
+  productId     String
+  variantId     String?
+  sku           String
+  productName   String
+  variantName   String?
+  type          StockMovementType
+  quantity      Int
+  stockBefore   Int
+  stockAfter    Int
+  unitCost      Int?
+  referenceType String?
+  referenceId   String?
+  referenceNo   String?
+  reason        String?
+  note          String?
+  userId        String
+  userName      String
+  branchId      String?
+  createdAt     DateTime          @default(now())
+
+  @@index([productId])
+  @@index([sku])
+  @@index([createdAt])
+  @@map("stock_movements")
+}
+
+model AuditLog {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  action         String
+  entityType     String
+  entityId       String?
+  entityNo       String?
+  description    String
+  userId         String
+  userName       String
+  userRole       String
+  approvedById   String?
+  approvedByName String?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  @@index([entityType])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model Supplier {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  code      String   @unique
+  name      String
+  phone     String?
+  address   String?
+  note      String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@map("suppliers")
+}
+
+model PurchaseOrder {
+  id             String              @id @default(auto()) @map("_id") @db.ObjectId
+  purchaseNo     String              @unique
+  supplierId     String
+  supplierName   String
+  status         PurchaseOrderStatus @default(DRAFT)
+  items          PurchaseOrderItem[]
+  totalCost      Int
+  note           String?
+  orderedAt      DateTime?
+  receivedAt     DateTime?
+  createdById    String
+  createdByName  String
+  receivedById   String?
+  receivedByName String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([supplierId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("purchase_orders")
+}
+
+model Member {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  phone     String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([updatedAt])
+  @@map("members")
+}
+
+model MemberTier {
+  id              String  @id @default(auto()) @map("_id") @db.ObjectId
+  name            String  @unique
+  minSpend        Int
+  discountPercent Int
+  isActive        Boolean @default(true)
+
+  @@index([minSpend])
+  @@index([isActive])
+  @@map("member_tiers")
+}
+
+model StoreSettingsRecord {
+  id                 String   @id @map("_id")
+  storeName          String
+  storeSubtitle      String
+  storeNote          String
+  logoUrl            String?
+  posReceiptName     String
+  posReceiptSubtitle String
+  posReceiptNote     String
+  posReceiptLogoUrl  String?
+  orderBillSize      String
+  posReceiptSize     String
+  shippingCompanies  String[]
+  taxEnabled         Boolean?
+  taxRate            Int?
+  taxId              String?
+  receiptAddress     String?
+  defaultBranchName  String?
+  defaultRegisterName String?
+  staffMaxDiscountPercent Int?
+  requireShiftForSale Boolean?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("store_settings")
 }
 
 type OrderItem {
@@ -174,6 +499,8 @@ type ProductVariant {
   sellPrice     Int
   stock         Int
   lowStockAlert Int
+  // Calendar date (YYYY-MM-DD) in the shop timezone; optional for older stock.
+  expiryDate    String?
 }
 
 type SaleItem {
@@ -185,6 +512,37 @@ type SaleItem {
   sku         String
   quantity    Int
   price       Int
+  originalPrice Int?
+  promotionId String?
+  promotionName String?
   cost        Int
   imageUrl    String?
+}
+
+type SalePayment {
+  method    SalePaymentMethod
+  amount    Int
+  reference String?
+}
+
+type SaleReturnItem {
+  productId   String
+  variantId   String?
+  name        String
+  variantName String?
+  sku         String
+  quantity    Int
+  price       Int
+  cost        Int
+}
+
+type PurchaseOrderItem {
+  productId        String
+  variantId        String?
+  name             String
+  variantName      String?
+  sku              String
+  quantityOrdered  Int
+  quantityReceived Int
+  unitCost         Int
 }

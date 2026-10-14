@@ -4,7 +4,6 @@ import {
   AlertTriangle,
   Database,
   Eye,
-  LogOut,
   Plus,
   ReceiptText,
   Save,
@@ -32,9 +31,12 @@ import {
   updateShippingCompany,
   updateBillSizeSettings,
   updatePosReceiptSettings,
+  updatePosOperationsSettings,
   updateStoreSettings
 } from "@/actions/settings.action";
 import { PageHeader } from "@/components/layout/page-header";
+import { BackupControls } from "@/components/settings/backup-controls";
+import { HardwareTools } from "@/components/settings/hardware-tools";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -61,28 +63,29 @@ export default async function SettingsPage() {
     <section>
       <PageHeader
         title="ຕັ້ງຄ່າ"
-        description="ຂໍ້ມູນອ້າງອີງຂອງລະບົບສໍາລັບສິນຄ້າ ຂົນສົ່ງ ສະຖານະ ແລະ ຖານຂໍ້ມູນ"
+        description="ຈັດການຂໍ້ມູນຮ້ານ, ບິນ, ສິນຄ້າ, ສະມາຊິກ ແລະ ຂົນສົ່ງ"
       />
-      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
-        <Card className="lg:hidden">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <LogOut className="h-5 w-5" aria-hidden />
-              ອອກຈາກລະບົບ
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <a
-              href="/logout"
-              className="flex min-h-11 items-center justify-center gap-2 rounded-md bg-zinc-950 px-4 text-sm font-bold text-white hover:bg-zinc-900"
-            >
-              <LogOut className="h-4 w-4 text-white" aria-hidden />
-              <span className="text-white">ออกจากระบบ</span>
-            </a>
-          </CardContent>
-        </Card>
-
-        <Card>
+      <nav className="mb-5 flex gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-sm" aria-label="ທາງລັດຕັ້ງຄ່າ">
+        {[
+          ["#store", "ຂໍ້ມູນຮ້ານ"],
+          ["#pos-bill", "ບິນ POS"],
+          ["#pos-operations", "POS / ອາກອນ"],
+          ["#catalog", "ສິນຄ້າ"],
+          ["#members", "ສະມາຊິກ"],
+          ["#shipping", "ຂົນສົ່ງ"],
+          ["#system", "ລະບົບ"]
+        ].map(([href, label]) => (
+          <a
+            key={href}
+            href={href}
+            className="shrink-0 rounded-xl px-3 py-2 text-sm font-bold text-slate-600 transition hover:bg-indigo-50 hover:text-indigo-700"
+          >
+            {label}
+          </a>
+        ))}
+      </nav>
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+        <Card id="store" className="scroll-mt-24">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Store className="h-5 w-5" aria-hidden />
@@ -90,8 +93,8 @@ export default async function SettingsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex items-center gap-3 rounded-md border border-zinc-200 p-3">
-              <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md bg-zinc-50">
+            <div className="flex items-center gap-3 rounded-xl border border-slate-200 p-3">
+              <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-slate-50">
                 {storeSettings.logoUrl ? (
                   <Image
                     src={storeSettings.logoUrl}
@@ -101,20 +104,20 @@ export default async function SettingsPage() {
                     className="object-contain"
                   />
                 ) : (
-                  <div className="flex h-full items-center justify-center text-xs text-zinc-400">
+                  <div className="flex h-full items-center justify-center text-xs text-slate-400">
                     Logo
                   </div>
                 )}
               </div>
               <div className="min-w-0">
-                <p className="truncate text-sm font-bold text-zinc-950">
+                <p className="truncate text-sm font-bold text-slate-950">
                   {storeSettings.storeName}
                 </p>
-                <p className="truncate text-xs font-bold text-zinc-700">
+                <p className="truncate text-xs font-bold text-slate-700">
                   {storeSettings.storeSubtitle || "ໃຊ້ໃນໃບປິ້ນບິນ"}
                 </p>
                 {storeSettings.storeNote ? (
-                  <p className="truncate text-xs font-bold text-zinc-700">
+                  <p className="truncate text-xs font-bold text-slate-700">
                     {storeSettings.storeNote}
                   </p>
                 ) : null}
@@ -123,11 +126,10 @@ export default async function SettingsPage() {
 
             <form
               action={updateStoreSettings}
-              encType="multipart/form-data"
               className="grid gap-3"
             >
               <label className="space-y-1.5">
-                <span className="text-sm font-semibold text-zinc-700">
+                <span className="text-sm font-semibold text-slate-700">
                   ຊື່ຮ້ານ
                 </span>
                 <Input
@@ -137,7 +139,7 @@ export default async function SettingsPage() {
                 />
               </label>
               <label className="space-y-1.5">
-                <span className="text-sm font-semibold text-zinc-700">
+                <span className="text-sm font-semibold text-slate-700">
                   ຂໍ້ມູນໃຕ້ຊື່ຮ້ານ
                 </span>
                 <Input
@@ -147,7 +149,7 @@ export default async function SettingsPage() {
                 />
               </label>
               <label className="space-y-1.5">
-                <span className="text-sm font-semibold text-zinc-700">
+                <span className="text-sm font-semibold text-slate-700">
                   ຂໍ້ມູນເພີ່ມໃຕ້ຊື່ຮ້ານ
                 </span>
                 <Input
@@ -157,7 +159,7 @@ export default async function SettingsPage() {
                 />
               </label>
               <label className="space-y-1.5">
-                <span className="text-sm font-semibold text-zinc-700">
+                <span className="text-sm font-semibold text-slate-700">
                   ໂລໂກ້ຮ້ານ
                 </span>
                 <Input
@@ -181,7 +183,7 @@ export default async function SettingsPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card id="pos-bill" className="scroll-mt-24">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <ReceiptText className="h-5 w-5" aria-hidden />
@@ -189,8 +191,8 @@ export default async function SettingsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex items-center gap-3 rounded-md border border-zinc-200 p-3">
-              <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md bg-zinc-50">
+            <div className="flex items-center gap-3 rounded-xl border border-slate-200 p-3">
+              <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-slate-50">
                 {storeSettings.posReceiptLogoUrl ? (
                   <Image
                     src={storeSettings.posReceiptLogoUrl}
@@ -200,20 +202,20 @@ export default async function SettingsPage() {
                     className="object-contain"
                   />
                 ) : (
-                  <div className="flex h-full items-center justify-center text-xs text-zinc-400">
+                  <div className="flex h-full items-center justify-center text-xs text-slate-400">
                     POS
                   </div>
                 )}
               </div>
               <div className="min-w-0">
-                <p className="truncate text-sm font-bold text-zinc-950">
+                <p className="truncate text-sm font-bold text-slate-950">
                   {storeSettings.posReceiptName}
                 </p>
-                <p className="truncate text-xs font-bold text-zinc-700">
+                <p className="truncate text-xs font-bold text-slate-700">
                   {storeSettings.posReceiptSubtitle || "ໃຊ້ໃນບິນຂາຍໜ້າຮ້ານ"}
                 </p>
                 {storeSettings.posReceiptNote ? (
-                  <p className="truncate text-xs font-bold text-zinc-700">
+                  <p className="truncate text-xs font-bold text-slate-700">
                     {storeSettings.posReceiptNote}
                   </p>
                 ) : null}
@@ -222,11 +224,10 @@ export default async function SettingsPage() {
 
             <form
               action={updatePosReceiptSettings}
-              encType="multipart/form-data"
               className="grid gap-3"
             >
               <label className="space-y-1.5">
-                <span className="text-sm font-semibold text-zinc-700">
+                <span className="text-sm font-semibold text-slate-700">
                   ຊື່ໃນບິນ POS
                 </span>
                 <Input
@@ -236,7 +237,7 @@ export default async function SettingsPage() {
                 />
               </label>
               <label className="space-y-1.5">
-                <span className="text-sm font-semibold text-zinc-700">
+                <span className="text-sm font-semibold text-slate-700">
                   ຂໍ້ມູນໃຕ້ຊື່ POS
                 </span>
                 <Input
@@ -246,7 +247,7 @@ export default async function SettingsPage() {
                 />
               </label>
               <label className="space-y-1.5">
-                <span className="text-sm font-semibold text-zinc-700">
+                <span className="text-sm font-semibold text-slate-700">
                   ຂໍ້ມູນເພີ່ມໃຕ້ຊື່ POS
                 </span>
                 <Input
@@ -256,7 +257,7 @@ export default async function SettingsPage() {
                 />
               </label>
               <label className="space-y-1.5">
-                <span className="text-sm font-semibold text-zinc-700">
+                <span className="text-sm font-semibold text-slate-700">
                   ໂລໂກ້ບິນ POS
                 </span>
                 <Input
@@ -274,13 +275,43 @@ export default async function SettingsPage() {
             <Link href="/settings/pos-bill-preview" className="block">
               <Button variant="secondary" className="w-full">
                 <Eye className="h-4 w-4" aria-hidden />
-                ดูตัวอย่างบิล POS
+                ເບິ່ງຕົວຢ່າງບິນ POS
               </Button>
             </Link>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card id="pos-operations" className="scroll-mt-24">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Workflow className="h-5 w-5" aria-hidden />
+              POS, ອາກອນ ແລະ ການໃຊ້ງານ
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form action={updatePosOperationsSettings} className="grid gap-3">
+              <Input name="defaultBranchName" defaultValue={storeSettings.defaultBranchName} placeholder="ຊື່ສາຂາ" />
+              <Input name="defaultRegisterName" defaultValue={storeSettings.defaultRegisterName} placeholder="ຊື່ເຄື່ອງ POS" />
+              <Input name="receiptAddress" defaultValue={storeSettings.receiptAddress} placeholder="ທີ່ຢູ່ໃນໃບຮັບເງິນ" />
+              <Input name="taxId" defaultValue={storeSettings.taxId} placeholder="ເລກປະຈໍາຕົວຜູ້ເສຍອາກອນ" />
+              <label className="grid grid-cols-[1fr_7rem] items-center gap-2 text-sm font-semibold text-slate-700">
+                <span>ອັດຕາອາກອນ (%)</span>
+                <Input name="taxRate" type="number" min={0} max={100} defaultValue={storeSettings.taxRate} />
+              </label>
+              <label className="flex items-center gap-2 rounded-xl border border-slate-200 p-3 text-sm font-semibold">
+                <input name="taxEnabled" type="checkbox" defaultChecked={storeSettings.taxEnabled} className="h-4 w-4" />
+                ເປີດສະແດງອາກອນໃນບິນ (ລາຄາລວມອາກອນ)
+              </label>
+              <label className="flex items-center gap-2 rounded-xl border border-slate-200 p-3 text-sm font-semibold">
+                <input name="requireShiftForSale" type="checkbox" defaultChecked={storeSettings.requireShiftForSale} className="h-4 w-4" />
+                ຕ້ອງເປີດກະກ່ອນຂາຍ
+              </label>
+              <Button type="submit" className="w-full"><Save className="h-4 w-4" />ບັນທຶກການຕັ້ງຄ່າ POS</Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        <Card id="catalog" className="scroll-mt-24">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Tags className="h-5 w-5" aria-hidden />
@@ -304,9 +335,9 @@ export default async function SettingsPage() {
               {categories.map((category) => (
                 <div
                   key={category}
-                  className="flex items-center justify-between gap-2 rounded-md border border-zinc-200 px-3 py-2"
+                  className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 px-3 py-2"
                 >
-                  <span className="min-w-0 truncate text-sm font-semibold text-zinc-950">
+                  <span className="min-w-0 truncate text-sm font-semibold text-slate-950">
                     {category}
                   </span>
                   <form action={deleteCategory}>
@@ -323,13 +354,13 @@ export default async function SettingsPage() {
                 </div>
               ))}
             </div>
-            <p className="text-xs leading-5 text-zinc-500">
+            <p className="text-xs leading-5 text-slate-500">
               ໝວດໝູ່ທີ່ເພີ່ມຈະໄປສະແດງໃນໜ້າເພີ່ມສິນຄ້າ ແລະຕົວກອງໃນໜ້າສິນຄ້າ/ອໍເດີ
             </p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card id="members" className="scroll-mt-24">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <UsersRound className="h-5 w-5" aria-hidden />
@@ -364,7 +395,7 @@ export default async function SettingsPage() {
                 <form
                   key={tier.id}
                   action={updateMemberTier}
-                  className="grid gap-2 rounded-md border border-zinc-200 p-3"
+                  className="grid gap-2 rounded-xl border border-slate-200 p-3"
                 >
                   <input type="hidden" name="id" value={tier.id} />
                   <Input name="name" defaultValue={tier.name} required />
@@ -389,7 +420,7 @@ export default async function SettingsPage() {
                     </Button>
                     <button
                       formAction={deleteMemberTier}
-                      className="inline-flex min-h-11 items-center justify-center rounded-md px-3 text-rose-600 hover:bg-rose-50"
+                      className="inline-flex min-h-11 items-center justify-center rounded-xl px-3 text-rose-600 hover:bg-rose-50"
                       aria-label={`ລຶບລະດັບ ${tier.name}`}
                     >
                       <Trash2 className="h-4 w-4" aria-hidden />
@@ -398,13 +429,13 @@ export default async function SettingsPage() {
                 </form>
               ))}
             </div>
-            <p className="text-xs leading-5 text-zinc-500">
+            <p className="text-xs leading-5 text-slate-500">
               ລະບົບຈະຄິດລະດັບຈາກຍອດຊື້ POS ທີ່ບໍ່ຖືກຍົກເລີກ ຫຼື ຄືນສິນຄ້າ.
             </p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card id="shipping" className="scroll-mt-24">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Truck className="h-5 w-5" aria-hidden />
@@ -429,7 +460,7 @@ export default async function SettingsPage() {
                 <form
                   key={company}
                   action={updateShippingCompany}
-                  className="grid grid-cols-[1fr_auto_auto] gap-2 rounded-md border border-zinc-200 p-2"
+                  className="grid grid-cols-[1fr_auto_auto] gap-2 rounded-xl border border-slate-200 p-2"
                 >
                   <input type="hidden" name="oldName" value={company} />
                   <Input name="name" defaultValue={company} required />
@@ -443,7 +474,7 @@ export default async function SettingsPage() {
                   </Button>
                   <button
                     formAction={deleteShippingCompany}
-                    className="inline-flex min-h-10 items-center justify-center rounded-md px-3 text-rose-600 hover:bg-rose-50"
+                    className="inline-flex min-h-10 items-center justify-center rounded-xl px-3 text-rose-600 hover:bg-rose-50"
                     aria-label={`ລຶບຂົນສົ່ງ ${company}`}
                   >
                     <Trash2 className="h-4 w-4" aria-hidden />
@@ -451,7 +482,7 @@ export default async function SettingsPage() {
                 </form>
               ))}
             </div>
-            <p className="text-xs leading-5 text-zinc-500">
+            <p className="text-xs leading-5 text-slate-500">
               ລາຍຊື່ນີ້ຈະໄປສະແດງໃນໜ້າສ້າງອໍເດີ ແລະ ໜ້າແກ້ໄຂອໍເດີ.
             </p>
           </CardContent>
@@ -473,23 +504,18 @@ export default async function SettingsPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card id="system" className="scroll-mt-24">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Database className="h-5 w-5" aria-hidden />
-              Database
+              ສະຖານະຂໍ້ມູນ
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm text-zinc-600">
-            <p>
-              ລະບົບໃຊ້ MongoDB ຜ່ານ Prisma ໂດຍອ່ານຄ່າຈາກຕົວແປ
-              <code className="mx-1 rounded bg-zinc-100 px-1.5 py-0.5">
-                DATABASE_URL
-              </code>
-            </p>
-            <p>
-              ຖ້າຍັງບໍ່ຕັ້ງຄ່າ ລະບົບຈະສະແດງຂໍ້ມູນຕົວຢ່າງເພື່ອໃຫ້ທົດສອບ UI ໄດ້ກ່ອນ
-            </p>
+          <CardContent className="space-y-3 text-sm text-slate-600">
+            <p className="font-bold text-slate-900">ລະບົບຂໍ້ມູນພ້ອມໃຊ້ງານ</p>
+            <p>ຂໍ້ມູນສິນຄ້າ, ອໍເດີ, ບິນ ແລະ ສະມາຊິກ ຈະຖືກບັນທຶກອັດຕະໂນມັດ.</p>
+            <BackupControls />
+            <HardwareTools />
           </CardContent>
         </Card>
 
@@ -503,7 +529,7 @@ export default async function SettingsPage() {
           <CardContent>
             <form action={updateBillSizeSettings} className="grid gap-3">
               <label className="space-y-1.5">
-                <span className="text-sm font-semibold text-zinc-700">
+                <span className="text-sm font-semibold text-slate-700">
                   ບິນຂົນສົ່ງ
                 </span>
                 <Select
@@ -515,7 +541,7 @@ export default async function SettingsPage() {
                 </Select>
               </label>
               <label className="space-y-1.5">
-                <span className="text-sm font-semibold text-zinc-700">
+                <span className="text-sm font-semibold text-slate-700">
                   ບິນ POS
                 </span>
                 <Select
@@ -541,14 +567,14 @@ export default async function SettingsPage() {
               ລຶບຂໍ້ມູນທັງໝົດ
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm text-zinc-600">
+          <CardContent className="space-y-3 text-sm text-slate-600">
             <p>
               ປຸ່ມນີ້ຈະລຶບສິນຄ້າ, ອໍເດີ ແລະໝວດໝູ່ສິນຄ້າທັງໝົດ
               ເພື່ອເລີ່ມກອກຂໍ້ມູນຈິງ. ຂໍ້ມູນຮ້ານ ແລະໂລໂກ້ຈະຍັງຢູ່.
             </p>
             <form action={clearAllBusinessData} className="space-y-3">
               <label className="space-y-1.5">
-                <span className="text-sm font-semibold text-zinc-700">
+                <span className="text-sm font-semibold text-slate-700">
                   ພິມ DELETE ເພື່ອຢືນຢັນ
                 </span>
                 <Input

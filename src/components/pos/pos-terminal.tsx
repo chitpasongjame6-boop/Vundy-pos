@@ -1,20 +1,26 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { getPosPromotions } from "@/actions/promotion.action";
+import { getPricingKey, getPromotionDiscount, resolvePromotionPrice } from "@/lib/promotions";
 import {
   Barcode,
   Banknote,
   Minus,
   Plus,
   Printer,
+  Search,
   Trash2,
-  UserRound
+  UserRound,
+  X
 } from "lucide-react";
 import { createPosSale } from "@/actions/pos.action";
 import { buildPosReceiptHtml } from "@/components/pos/pos-receipt-html";
 import type {
   MemberSummary,
   Product,
+  Promotion,
   Sale,
   SalePaymentMethod,
   StoreSettings
@@ -23,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/input";
 import { MoneyInput } from "@/components/ui/money-input";
+import { EmptyState } from "@/components/ui/patterns";
 import { resolvePublicAssetUrl } from "@/lib/asset-url";
 import {
   formatCurrency,
@@ -40,6 +47,9 @@ type ProductOption = {
   sku: string;
   category: string;
   price: number;
+  originalPrice: number;
+  promotionId: string | null;
+  promotionName: string | null;
   cost: number;
   stock: number;
 };
@@ -49,14 +59,39 @@ type CartItem = ProductOption & {
 };
 
 export function PosTerminal({
+  initialPricing,
   products,
   storeSettings,
-  members
+  members,
+  userRole
 }: {
+  initialPricing: { promotions: Promotion[]; serverNow: number };
   products: Product[];
   storeSettings: StoreSettings;
   members: MemberSummary[];
+  userRole: "OWNER" | "STAFF";
 }) {
+  const router = useRouter();
+  const [pricing, setPricing] = useState(initialPricing);
+  const [pricingNow, setPricingNow] = useState(initialPricing.serverNow);
+  const [pricingError, setPricingError] = useState(false);
+  const pricingClock = useRef({ server: initialPricing.serverNow, client: 0 });
+  const refreshPricing = useCallback(() => getPosPromotions().then(
+    latest => {
+      pricingClock.current = { server: latest.serverNow, client: performance.now() };
+      setPricing(latest); setPricingNow(latest.serverNow); setPricingError(false);
+    },
+    () => { setPricingError(true); }
+  ), []);
+  useEffect(() => {
+    pricingClock.current = { server: initialPricing.serverNow, client: performance.now() };
+    void refreshPricing();
+    const clock = setInterval(() => setPricingNow(pricingClock.current.server + performance.now() - pricingClock.current.client), 1000);
+    const refresh = setInterval(() => { void refreshPricing(); }, 30000);
+    const onFocus = () => { void refreshPricing(); };
+    window.addEventListener("focus", onFocus);
+    return () => { clearInterval(clock); clearInterval(refresh); window.removeEventListener("focus", onFocus); };
+  }, [initialPricing.serverNow, refreshPricing]);
   const options = useMemo(
     () =>
       products.flatMap((product) =>
@@ -69,12 +104,12 @@ export function PosTerminal({
           displayName: formatProductVariantName(product.name, variant.name),
           sku: variant.sku,
           category: product.category,
-          price: variant.sellPrice,
+          ...resolvePromotionPrice(product.id, variant.id, variant.sellPrice, pricing.promotions, pricingNow),
           cost: variant.costPrice,
           stock: variant.stock
         }))
       ),
-    [products]
+    [products, pricing.promotions, pricingNow]
   );
   const [scanValue, setScanValue] = useState("");
   const [selectedKey, setSelectedKey] = useState("");
@@ -82,28 +117,74 @@ export function PosTerminal({
   const [discount, setDiscount] = useState(0);
   const [receivedAmount, setReceivedAmount] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState<SalePaymentMethod>("CASH");
+  const [paymentReference, setPaymentReference] = useState("");
+  const [splitCash, setSplitCash] = useState(0);
+  const [splitTransfer, setSplitTransfer] = useState(0);
+  const [splitOther, setSplitOther] = useState(0);
+  const [memberSearch, setMemberSearch] = useState("");
   const [selectedMemberId, setSelectedMemberId] = useState("");
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
   const lastAutoAddedBarcode = useRef("");
+  const idempotencyKey = useRef(crypto.randomUUID());
   const selectedMember = members.find((member) => member.id === selectedMemberId);
+  const matchingMembers = useMemo(() => {
+    const query = memberSearch.trim().toLocaleLowerCase();
+
+    if (!query) {
+      return [];
+    }
+
+    const queryDigits = query.replace(/\D/g, "");
+
+    return members.filter((member) => {
+      const phoneDigits = member.phone.replace(/\D/g, "");
+
+      return (
+        member.name.toLocaleLowerCase().includes(query) ||
+        member.phone.toLocaleLowerCase().includes(query) ||
+        Boolean(queryDigits && phoneDigits.includes(queryDigits))
+      );
+    });
+  }, [memberSearch, members]);
   const selectedOption = options.find((item) => item.key === selectedKey) ?? null;
   const selectedOutOfStock = Boolean(selectedOption && selectedOption.stock <= 0);
 
-  const subtotal = cart.reduce(
-    (sum, item) => sum + item.price * item.quantity,
+  const pricedCart = cart.map(item => ({ ...item, ...resolvePromotionPrice(item.productId, item.variantId,
+    options.find(option => option.key === item.key)?.originalPrice ?? item.originalPrice, pricing.promotions, pricingNow) }));
+  const subtotal = pricedCart.reduce(
+    (sum, item) => sum + item.originalPrice * item.quantity,
     0
   );
-  const safeDiscount = Math.min(Math.max(0, discount), subtotal);
-  const netAmount = subtotal - safeDiscount;
+  const promotionDiscount = getPromotionDiscount(pricedCart);
+  const safeDiscount = promotionDiscount > 0 ? 0 : Math.min(Math.max(0, discount), subtotal);
+  const netAmount = subtotal - promotionDiscount - safeDiscount;
   const changeAmount =
     paymentMethod === "CASH" ? Math.max(0, receivedAmount - netAmount) : 0;
   const memberDiscountAmount = selectedMember?.tier?.discountPercent
-    ? Math.round((subtotal * selectedMember.tier.discountPercent) / 100)
+    ? (promotionDiscount > 0 ? 0 : Math.round((subtotal * selectedMember.tier.discountPercent) / 100))
     : 0;
+  const splitTotal = splitCash + splitTransfer + splitOther;
+  const paymentIsValid =
+    paymentMethod === "CASH"
+      ? receivedAmount >= netAmount
+      : paymentMethod === "SPLIT"
+        ? splitTotal === netAmount && splitTotal > 0
+        : true;
+
+  function selectMember(member: MemberSummary) {
+    setSelectedMemberId(member.id);
+    setMemberSearch(`${member.name} - ${member.phone}`);
+  }
+
+  function clearMemberSelection() {
+    setSelectedMemberId("");
+    setMemberSearch("");
+  }
 
   function addToCart(option: ProductOption) {
     setMessage("");
+    if (option.promotionId) setDiscount(0);
     setCart((current) => {
       const existing = current.find((item) => item.key === option.key);
       const currentQuantity = existing?.quantity ?? 0;
@@ -214,7 +295,10 @@ export function PosTerminal({
     setMessage("");
 
     startTransition(async () => {
+      try {
       const result = await createPosSale({
+        pricingKey: getPricingKey(pricedCart),
+        expectedNetAmount: netAmount,
         items: cart.map((item) => ({
           productId: item.productId,
           variantId: item.variantId,
@@ -223,11 +307,19 @@ export function PosTerminal({
         discount: safeDiscount,
         paymentMethod,
         receivedAmount,
-        memberId: selectedMemberId
+        memberId: selectedMemberId,
+        paymentReference,
+        payments: paymentMethod === "SPLIT" ? [
+          { method: "CASH", amount: splitCash },
+          { method: "TRANSFER", amount: splitTransfer, reference: paymentReference },
+          { method: "OTHER", amount: splitOther }
+        ] : undefined,
+        idempotencyKey: idempotencyKey.current
       });
 
       if (!result.ok || !result.sale) {
         setMessage(result.message);
+        if (result.priceChanged) { await refreshPricing(); router.refresh(); }
         return;
       }
 
@@ -238,7 +330,16 @@ export function PosTerminal({
       setScanValue("");
       setSelectedKey("");
       setSelectedMemberId("");
+      setMemberSearch("");
+      setPaymentReference("");
+      setSplitCash(0);
+      setSplitTransfer(0);
+      setSplitOther(0);
+      idempotencyKey.current = crypto.randomUUID();
       setMessage(result.message);
+      } catch {
+        setMessage("ເຊື່ອມຕໍ່ບໍ່ສໍາເລັດ ກະລຸນາກວດປະຫວັດບິນ ຫຼື ກົດບັນທຶກອີກຄັ້ງ (ລະບົບປ້ອງກັນບິນຊໍ້າ)");
+      }
     });
   }
 
@@ -248,13 +349,14 @@ export function PosTerminal({
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Barcode className="h-5 w-5" aria-hidden />
-            ຄິດໄລ່ເງິນ / ປິ້ນບິນ
+            1. ເລືອກສິນຄ້າ
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {pricingError && <p role="alert" className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">ຍັງອັບເດດໂປຣບໍ່ໄດ້. ລະບົບຈະກວດລາຄາອີກຄັ້ງກ່ອນບັນທຶກບິນ.</p>}
           <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
             <label className="space-y-1.5">
-              <span className="text-sm font-semibold text-zinc-700">
+              <span className="text-sm font-semibold text-slate-700">
                 ສະແກນ SKU / Barcode
               </span>
               <Input
@@ -268,11 +370,10 @@ export function PosTerminal({
                 }}
                 placeholder="ຍິງ Barcode ແລ້ວເພີ່ມອັດຕະໂນມັດ"
                 autoComplete="off"
-                autoFocus
               />
             </label>
             <label className="space-y-1.5">
-              <span className="text-sm font-semibold text-zinc-700">
+              <span className="text-sm font-semibold text-slate-700">
                 ເລືອກສິນຄ້າເອງ
               </span>
               <Select
@@ -283,12 +384,13 @@ export function PosTerminal({
                 {options.map((option) => (
                   <option key={option.key} value={option.key}>
                     {option.displayName} ({option.sku}) ·{" "}
+                    {formatCurrency(option.price)} {option.promotionName ? `— ໂປຣ: ${option.promotionName} (ປົກກະຕິ ${formatCurrency(option.originalPrice)}) · ` : " · "}
                     {option.stock <= 0 ? "ໝົດສະຕ໋ອກ" : `ສະຕ໋ອກ ${option.stock}`}
                   </option>
                 ))}
               </Select>
               {selectedOutOfStock ? (
-                <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700">
+                <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700">
                   {selectedOption?.displayName} ໝົດສະຕ໋ອກ
                   ບໍ່ສາມາດເພີ່ມໃສ່ບິນໄດ້
                 </p>
@@ -313,27 +415,28 @@ export function PosTerminal({
           </div>
 
           {message ? (
-            <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700">
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700">
               {message}
             </div>
           ) : null}
 
           <div className="space-y-2">
             {cart.length ? (
-              cart.map((item) => (
+              pricedCart.map((item) => (
                 <div
                   key={item.key}
-                  className="grid gap-3 rounded-md border border-zinc-200 p-3 md:grid-cols-[1fr_auto]"
+                  className="grid gap-3 rounded-xl border border-slate-200 p-3 md:grid-cols-[1fr_auto]"
                 >
                   <div className="min-w-0">
-                    <p className="font-bold text-zinc-950">
+                    <p className="font-bold text-slate-950">
                       {item.displayName}
                     </p>
-                    <p className="text-sm text-zinc-500">
+                    <p className="text-sm text-slate-500">
                       {item.sku} · {formatCurrency(item.price)} · ສະຕ໋ອກ{" "}
                       {item.stock}
                     </p>
-                    <p className="mt-1 text-sm font-bold text-zinc-950">
+                    <p className="mt-1 text-sm font-bold text-slate-950">
+                      {item.promotionName && <span className="mb-1 block text-xs font-semibold text-emerald-700">ໂປຣ: {item.promotionName} · <span className="text-slate-400 line-through">{formatCurrency(item.originalPrice)}</span> → {formatCurrency(item.price)}</span>}
                       {formatCurrency(item.price * item.quantity)}
                     </p>
                   </div>
@@ -376,51 +479,113 @@ export function PosTerminal({
                 </div>
               ))
             ) : (
-              <div className="rounded-md border border-dashed border-zinc-300 p-8 text-center text-sm text-zinc-500">
-                ສະແກນສິນຄ້າ ຫຼືເລືອກສິນຄ້າເພື່ອເລີ່ມຂາຍ
-              </div>
+              <EmptyState
+                icon={Barcode}
+                title="ບິນຍັງວ່າງ"
+                description="ສະແກນ Barcode ຫຼື ເລືອກສິນຄ້າດ້ານເທິງເພື່ອເລີ່ມຂາຍ"
+              />
             )}
           </div>
         </CardContent>
       </Card>
 
-      <Card className="h-fit">
+      <Card className="h-fit xl:sticky xl:top-6">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Banknote className="h-5 w-5" aria-hidden />
-            ສະຫຼຸບບິນ
+            2. ສະຫຼຸບ ແລະ ຊໍາລະ
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="rounded-md border border-zinc-200 p-3">
-            <label className="space-y-1.5">
-              <span className="flex items-center gap-2 text-sm font-semibold text-zinc-700">
+          <div className="rounded-xl border border-slate-200 p-3">
+            <div className="space-y-1.5">
+              <span className="flex items-center gap-2 text-sm font-semibold text-slate-700">
                 <UserRound className="h-4 w-4" aria-hidden />
                 ສະມາຊິກ
               </span>
-              <Select
-                value={selectedMemberId}
-                onChange={(event) => setSelectedMemberId(event.target.value)}
-              >
-                <option value="">ບໍ່ເລືອກສະມາຊິກ</option>
-                {members.map((member) => (
-                  <option key={member.id} value={member.id}>
-                    {member.name} - {member.phone}
-                    {member.tier ? ` - ${member.tier.name}` : ""}
-                  </option>
-                ))}
-              </Select>
-            </label>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" aria-hidden />
+                <Input
+                  value={memberSearch}
+                  onChange={(event) => {
+                    setMemberSearch(event.target.value);
+                    setSelectedMemberId("");
+                  }}
+                  placeholder="ຄົ້ນຫາຊື່ ຫຼື ເບີໂທສະມາຊິກ"
+                  aria-label="ຄົ້ນຫາສະມາຊິກດ້ວຍຊື່ ຫຼື ເບີໂທ"
+                  className="pl-9 pr-9"
+                />
+                {memberSearch ? (
+                  <button
+                    type="button"
+                    onClick={clearMemberSelection}
+                    className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                    aria-label="ລ້າງການຄົ້ນຫາສະມາຊິກ"
+                  >
+                    <X className="h-4 w-4" aria-hidden />
+                  </button>
+                ) : null}
+              </div>
+            </div>
+            {memberSearch.trim() && !selectedMember ? (
+              <div className="mt-2 overflow-hidden rounded-xl border border-slate-200 bg-white">
+                {matchingMembers.length ? (
+                  <>
+                    <div className="max-h-56 overflow-y-auto p-1">
+                      {matchingMembers.slice(0, 8).map((member) => (
+                        <button
+                          key={member.id}
+                          type="button"
+                          onClick={() => selectMember(member)}
+                          className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left hover:bg-indigo-50"
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-bold text-slate-950">
+                              {member.name}
+                            </span>
+                            <span className="block text-xs text-slate-500">{member.phone}</span>
+                          </span>
+                          <span className="shrink-0 text-xs font-semibold text-indigo-700">
+                            {member.tier?.name ?? "ສະມາຊິກ"}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                    {matchingMembers.length > 8 ? (
+                      <p className="border-t border-slate-100 px-3 py-2 text-xs text-slate-500">
+                        ພົບ {matchingMembers.length} ຄົນ · ກະລຸນາພິມເພີ່ມເພື່ອຄົ້ນຫາໃຫ້ແຄບລົງ
+                      </p>
+                    ) : null}
+                  </>
+                ) : (
+                  <p className="px-3 py-3 text-sm text-slate-500">
+                    ບໍ່ພົບສະມາຊິກທີ່ກົງກັບຄໍາຄົ້ນຫາ
+                  </p>
+                )}
+              </div>
+            ) : null}
             {selectedMember ? (
-              <div className="mt-2 rounded-md bg-zinc-50 p-2 text-xs text-zinc-600">
-                <p className="font-bold text-zinc-950">
-                  {selectedMember.name} / {selectedMember.phone}
-                </p>
+              <div className="mt-2 rounded-xl border border-emerald-200 bg-emerald-50 p-2 text-xs text-slate-600">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="font-bold text-slate-950">
+                    {selectedMember.name} / {selectedMember.phone}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={clearMemberSelection}
+                    className="shrink-0 rounded-md p-1 text-slate-400 hover:bg-white hover:text-slate-700"
+                    aria-label="ຍົກເລີກສະມາຊິກທີ່ເລືອກ"
+                  >
+                    <X className="h-4 w-4" aria-hidden />
+                  </button>
+                </div>
                 <p>
-                  ລະດັບ: {selectedMember.tier?.name ?? "-"} · ສ່ວນຫຼຸດ{" "}
-                  {selectedMember.tier?.discountPercent ?? 0}%
+                  ລະດັບ: {selectedMember.tier?.name ?? "-"}
+                  {userRole === "OWNER"
+                    ? ` · ສ່ວນຫຼຸດ ${selectedMember.tier?.discountPercent ?? 0}%`
+                    : ""}
                 </p>
-                {memberDiscountAmount > 0 ? (
+                {userRole === "OWNER" && memberDiscountAmount > 0 ? (
                   <Button
                     type="button"
                     variant="secondary"
@@ -433,17 +598,24 @@ export function PosTerminal({
               </div>
             ) : null}
           </div>
-          <SummaryRow label="ຍອດລວມ" value={formatCurrency(subtotal)} />
+          <SummaryRow label="ຍອດກ່ອນຫຼຸດ" value={formatCurrency(subtotal)} />
+          {promotionDiscount > 0 && <><SummaryRow label="ສ່ວນຫຼຸດໂປຣໂມຊັນ" value={`−${formatCurrency(promotionDiscount)}`} /><p className="rounded-xl bg-emerald-50 p-3 text-xs text-emerald-800">ໃຊ້ໂປຣອັດຕະໂນມັດ · ບໍ່ຫຼຸດສະມາຊິກ / ທ້າຍບິນຊໍ້າ</p></>}
+          {userRole === "OWNER" && promotionDiscount === 0 ? (
+            <label className="space-y-1.5">
+              <span className="text-sm font-semibold text-slate-700">ສ່ວນຫຼຸດ</span>
+              <MoneyInput
+                value={discount}
+                min={0}
+                onValueChange={setDiscount}
+              />
+            </label>
+          ) : userRole === "STAFF" && promotionDiscount === 0 ? (
+            <p className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-600">
+              ສ່ວນຫຼຸດຈັດການໂດຍເຈົ້າຂອງຮ້ານເທົ່ານັ້ນ
+            </p>
+          ) : null}
           <label className="space-y-1.5">
-            <span className="text-sm font-semibold text-zinc-700">ສ່ວນຫຼຸດ</span>
-            <MoneyInput
-              value={discount}
-              min={0}
-              onValueChange={setDiscount}
-            />
-          </label>
-          <label className="space-y-1.5">
-            <span className="text-sm font-semibold text-zinc-700">
+            <span className="text-sm font-semibold text-slate-700">
               ວິທີຊໍາລະ
             </span>
             <Select
@@ -455,11 +627,12 @@ export function PosTerminal({
               <option value="CASH">ເງິນສົດ</option>
               <option value="TRANSFER">ໂອນເງິນ</option>
               <option value="OTHER">ອື່ນໆ</option>
+              <option value="SPLIT">ແບ່ງຈ່າຍຫຼາຍວິທີ</option>
             </Select>
           </label>
           {paymentMethod === "CASH" ? (
             <label className="space-y-1.5">
-              <span className="text-sm font-semibold text-zinc-700">ຮັບເງິນ</span>
+              <span className="text-sm font-semibold text-slate-700">ຮັບເງິນ</span>
               <MoneyInput
                 value={receivedAmount}
                 min={0}
@@ -467,17 +640,65 @@ export function PosTerminal({
               />
             </label>
           ) : null}
-          <div className="rounded-md bg-zinc-50 p-3">
+          {paymentMethod === "TRANSFER" || paymentMethod === "OTHER" ? (
+            <label className="space-y-1.5">
+              <span className="text-sm font-semibold text-slate-700">ເລກອ້າງອີງ / ໝາຍເຫດຊໍາລະ</span>
+              <Input
+                value={paymentReference}
+                onChange={(event) => setPaymentReference(event.target.value)}
+                placeholder="ເຊັ່ນ ເລກທຸລະກໍາ QR"
+              />
+            </label>
+          ) : null}
+          {paymentMethod === "SPLIT" ? (
+            <div className="grid gap-2 rounded-xl border border-slate-200 p-3">
+              <p className="text-sm font-bold text-slate-950">ແບ່ງຍອດຊໍາລະ</p>
+              <label className="grid grid-cols-[6rem_1fr] items-center gap-2 text-sm">
+                <span>ເງິນສົດ</span>
+                <MoneyInput value={splitCash} min={0} onValueChange={setSplitCash} />
+              </label>
+              <label className="grid grid-cols-[6rem_1fr] items-center gap-2 text-sm">
+                <span>ເງິນໂອນ</span>
+                <MoneyInput value={splitTransfer} min={0} onValueChange={setSplitTransfer} />
+              </label>
+              <label className="grid grid-cols-[6rem_1fr] items-center gap-2 text-sm">
+                <span>ອື່ນໆ</span>
+                <MoneyInput value={splitOther} min={0} onValueChange={setSplitOther} />
+              </label>
+              <Input
+                value={paymentReference}
+                onChange={(event) => setPaymentReference(event.target.value)}
+                placeholder="ເລກອ້າງອີງການໂອນ"
+              />
+              <p className={splitTotal === netAmount ? "text-xs font-bold text-emerald-700" : "text-xs font-bold text-rose-700"}>
+                ລວມ {formatCurrency(splitTotal)} / ຕ້ອງຊໍາລະ {formatCurrency(netAmount)}
+              </p>
+            </div>
+          ) : null}
+          <div className="rounded-xl bg-slate-50 p-3">
             <SummaryRow label="ຍອດສຸດທິ" value={formatCurrency(netAmount)} strong />
             {paymentMethod === "CASH" ? (
               <SummaryRow label="ເງິນທອນ" value={formatCurrency(changeAmount)} />
             ) : null}
+            {storeSettings.taxEnabled && storeSettings.taxRate > 0 ? (
+              <SummaryRow
+                label={`ລວມອາກອນ ${storeSettings.taxRate}%`}
+                value={formatCurrency(Math.round((netAmount * storeSettings.taxRate) / (100 + storeSettings.taxRate)))}
+              />
+            ) : null}
           </div>
+          {!paymentIsValid ? (
+            <p className="rounded-xl bg-rose-50 p-2 text-xs font-semibold text-rose-700">
+              {paymentMethod === "CASH"
+                ? "ເງິນທີ່ຮັບຕ້ອງບໍ່ຕໍ່າກວ່າຍອດສຸດທິ"
+                : "ຍອດແບ່ງຊໍາລະຕ້ອງເທົ່າກັບຍອດສຸດທິ"}
+            </p>
+          ) : null}
           <Button
             type="button"
             className="w-full"
             onClick={saveAndPrint}
-            disabled={!cart.length || isPending}
+            disabled={!cart.length || isPending || !paymentIsValid}
           >
             <Printer className="h-4 w-4" aria-hidden />
             {isPending ? "ກໍາລັງບັນທຶກ..." : "ບັນທຶກ / ປິ້ນບິນ"}
@@ -499,7 +720,7 @@ function SummaryRow({
 }) {
   return (
     <div className="flex items-center justify-between gap-3 py-1">
-      <span className="text-sm text-zinc-500">{label}</span>
+      <span className="text-sm text-slate-500">{label}</span>
       <span className={strong ? "text-xl font-bold" : "font-bold"}>{value}</span>
     </div>
   );
@@ -528,7 +749,7 @@ function getPosReceiptHtml(
   storeSettings: StoreSettings,
   logoUrl: string
 ) {
-  return buildPosReceiptHtml(sale, storeSettings, logoUrl);
+  return buildPosReceiptHtml(sale, storeSettings, logoUrl, window.location.origin);
 
   const receiptWidth = storeSettings.posReceiptSize === "POS_58MM" ? "58mm" : "80mm";
   const logoWidth = storeSettings.posReceiptSize === "POS_58MM" ? "76px" : "96px";
@@ -663,7 +884,7 @@ function printReceiptInFrame(receiptHtml: string) {
   frameWindow.document.close();
   frameWindow.addEventListener("afterprint", removeFrame, { once: true });
   printWhenReady(frameWindow);
-  window.setTimeout(removeFrame, 10000);
+  window.setTimeout(removeFrame, 300000);
 }
 
 function printWhenReady(printWindow: Window) {
@@ -681,11 +902,10 @@ function printWhenReady(printWindow: Window) {
 
   const ready = withTimeout(
     Promise.all([waitForFonts(printWindow), waitForImages(printWindow)]),
-    900
+    5000
   );
 
   void ready.finally(printOnce);
-  window.setTimeout(printOnce, 1000);
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
@@ -703,8 +923,8 @@ function waitForFonts(printWindow: Window) {
   const fonts = printWindow.document.fonts;
 
   return Promise.all([
-    fonts.load('400 16px "Noto Sans Lao"'),
-    fonts.load('700 16px "Noto Sans Lao"'),
+    fonts.load('400 16px "Noto Sans Lao"', 'ບິນ POS ₭'),
+    fonts.load('700 16px "Noto Sans Lao"', 'ບິນ POS ₭'),
     fonts.ready
   ])
     .then(() => undefined)

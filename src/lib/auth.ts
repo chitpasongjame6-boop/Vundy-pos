@@ -1,6 +1,8 @@
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import {
   decodeSession,
+  getRoleHome,
   sessionCookieName,
   type AppUser
 } from "@/lib/auth-config";
@@ -60,4 +62,24 @@ export async function getCurrentUser(): Promise<AppUser | null> {
   }
 
   return decodeSession(rawSession);
+}
+
+export async function requireAuthenticatedUser() {
+  const user = await getCurrentUser();
+
+  if (!user) {
+    redirect("/login");
+  }
+
+  return user;
+}
+
+export async function requireOwner() {
+  const user = await requireAuthenticatedUser();
+
+  if (user.role !== "OWNER") {
+    redirect(getRoleHome(user.role));
+  }
+
+  return user;
 }

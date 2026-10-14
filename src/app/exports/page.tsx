@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { getMembers } from "@/actions/member.action";
 import { getOrders } from "@/actions/order.action";
 import { getSales, getDailyClosings } from "@/actions/pos.action";
@@ -7,6 +8,7 @@ import { getStoreSettings } from "@/actions/settings.action";
 import { ExportPrintButton } from "@/components/exports/export-print-button";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
+import { effectiveSaleAmount, isRevenueSale } from "@/lib/sales";
 import {
   formatCurrency,
   formatDate,
@@ -26,9 +28,9 @@ export default async function ExportsPage() {
     getMembers()
   ]);
   const shippedOrders = orders.filter((order) => order.status === "SHIPPED");
-  const activeSales = sales.filter((sale) => !sale.status || sale.status === "ACTIVE");
+  const activeSales = sales.filter(isRevenueSale);
   const onlineTotal = shippedOrders.reduce((sum, order) => sum + order.totalAmount, 0);
-  const posTotal = activeSales.reduce((sum, sale) => sum + sale.netAmount, 0);
+  const posTotal = activeSales.reduce((sum, sale) => sum + effectiveSaleAmount(sale), 0);
 
   return (
     <section>
@@ -38,15 +40,26 @@ export default async function ExportsPage() {
           description="ລວມຂໍ້ມູນສິນຄ້າ ອໍເດີ ບິນໜ້າຮ້ານ ແລະປິດຍອດ ໃນຮູບແບບອ່ານງ່າຍ"
         />
         <div className="mb-4">
-          <ExportPrintButton />
+          <div className="flex flex-wrap gap-2">
+            <ExportPrintButton />
+            <Link href="/api/exports/sales" className="inline-flex min-h-11 items-center rounded-xl bg-emerald-600 px-4 text-sm font-bold text-white hover:bg-emerald-700">
+              CSV ການຂາຍ (Excel)
+            </Link>
+            <Link href="/api/exports/products" className="inline-flex min-h-11 items-center rounded-xl bg-sky-600 px-4 text-sm font-bold text-white hover:bg-sky-700">
+              CSV ສິນຄ້າ
+            </Link>
+            <Link href="/api/exports/stock-movements" className="inline-flex min-h-11 items-center rounded-xl bg-amber-600 px-4 text-sm font-bold text-white hover:bg-amber-700">
+              CSV ປະຫວັດສະຕ໋ອກ
+            </Link>
+          </div>
         </div>
       </div>
 
       <Card className="export-report">
         <CardContent className="space-y-6">
-          <div className="border-b border-zinc-200 pb-4 text-center">
-            <p className="text-2xl font-bold text-zinc-950">{settings.storeName}</p>
-            <p className="text-sm text-zinc-500">
+          <div className="border-b border-slate-200 pb-4 text-center">
+            <p className="text-2xl font-bold text-slate-950">{settings.storeName}</p>
+            <p className="text-sm text-slate-500">
               Export: {formatDate(new Date())}
             </p>
           </div>
@@ -237,9 +250,9 @@ export default async function ExportsPage() {
 
 function Summary({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md bg-zinc-50 p-3">
-      <p className="text-sm text-zinc-500">{label}</p>
-      <p className="font-bold text-zinc-950">{value}</p>
+    <div className="rounded-xl bg-slate-50 p-3">
+      <p className="text-sm text-slate-500">{label}</p>
+      <p className="font-bold text-slate-950">{value}</p>
     </div>
   );
 }
@@ -264,6 +277,9 @@ function ExportTable({
 }
 
 function paymentLabel(value: string) {
+  if (value === "SPLIT") {
+    return "ແບ່ງຈ່າຍ";
+  }
   if (value === "TRANSFER") {
     return "ເງິນໂອນ";
   }
@@ -276,6 +292,9 @@ function paymentLabel(value: string) {
 }
 
 function saleStatusLabel(value?: string) {
+  if (value === "PARTIALLY_RETURNED") {
+    return "ຄືນບາງສ່ວນ";
+  }
   if (value === "CANCELLED") {
     return "ຍົກເລີກ";
   }

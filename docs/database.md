@@ -1,5 +1,24 @@
 # Database
 
+## Promotions and sale price snapshots
+
+`promotions` stores owner-managed `FIXED_PRICE` / `PERCENT` rules, integer values,
+explicit product/variant targets, UTC start/end instants and an enable flag. Shop
+date-time input is interpreted as Asia/Vientiane (UTC+7). Creating, editing and
+pausing promotions creates an audit log. Local-store and JSON backups include rules.
+
+New POS `SaleItem.price` is the effective unit price after the promotion;
+`originalPrice`, `promotionId` and `promotionName` preserve the historical offer.
+These fields are optional so existing receipts remain readable. `Sale.totalAmount`
+is the gross amount before all discounts; `Sale.discount` includes promotion
+savings; `netAmount` and `profit` reflect the amount charged. Bill discounts do not
+stack with promotions. Refunds use saved effective item prices, not current offers.
+
+After schema updates run `npm run prisma:generate` and restart the app. MongoDB
+does not need a relational migration for these additive fields; `prisma db push`
+can synchronize the new collection index in a planned deployment (do not use a reset).
+
+
 ຖານຂໍ້ມູນຫຼັກແມ່ນ MongoDB ແລະ mapping ດ້ວຍ Prisma ໃນ `prisma/schema.prisma`
 
 ## products
@@ -91,3 +110,10 @@
 - `lowStockAlert`
 
 ການຝັງຂໍ້ມູນນີ້ຊ່ວຍໃຫ້ປະຫວັດອໍເດີບໍ່ປ່ຽນຕາມການແກ້ໄຂລາຄາ ຫຼື ຕົ້ນທຶນສິນຄ້າໃນພາຍຫຼັງ
+
+## ຂໍ້ມູນປະກອບ
+
+- `daily_closings` ເກັບການປິດຍອດປະຈໍາວັນ
+- `members` ແລະ `member_tiers` ເກັບສະມາຊິກ, ຍອດສະສົມ ແລະລະດັບສ່ວນຫຼຸດ
+- `store_settings` ເກັບຂໍ້ມູນຮ້ານ, ຮູບແບບບິນ ແລະບໍລິສັດຂົນສົ່ງ
+- ການສ້າງອໍເດີ/POS ກັບການຕັດສະຕ໋ອກ ແລະການຍົກເລີກກັບຄືນສະຕ໋ອກ ໃຊ້ MongoDB transaction

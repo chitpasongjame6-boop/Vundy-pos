@@ -1,15 +1,8 @@
 import type { Metadata } from "next";
-import { Noto_Sans_Lao } from "next/font/google";
 import "./globals.css";
 import { AppShell } from "@/components/layout/app-shell";
+import { Connectivity } from "@/components/layout/connectivity";
 import { getCurrentUser } from "@/lib/auth";
-
-const notoSansLao = Noto_Sans_Lao({
-  subsets: ["lao", "latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-noto-sans-lao",
-  display: "swap"
-});
 
 export const metadata: Metadata = {
   title: "Vundy - POS",
@@ -25,7 +18,8 @@ export default async function RootLayout({
 
   return (
     <html lang="lo">
-      <body className={notoSansLao.variable}>
+      <body>
+        <Connectivity />
         <AppShell currentUser={currentUser}>{children}</AppShell>
       </body>
     </html>

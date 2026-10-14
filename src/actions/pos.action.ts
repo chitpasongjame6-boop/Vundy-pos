@@ -1,11 +1,20 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { readLocalStore, updateLocalStore } from "@/lib/local-store";
 import { buildClosingNumber, buildReadableNumber, formatDateInput } from "@/lib/document-number";
-import { getCurrentUser } from "@/lib/auth";
+import { requireAuthenticatedUser } from "@/lib/auth";
+import { verifyOwnerApproval } from "@/lib/approval";
+import {
+  calculateInclusiveTax,
+  validatePosDiscountPermission,
+  validatePosPayment
+} from "@/lib/pos-rules";
 import { buildMemberSummaries } from "@/lib/members";
+import { getPricingKey, getPromotionDiscount, resolvePromotionPrice } from "@/lib/promotions";
+import { calculateSaleRefund } from "@/lib/sales";
 import {
   calculateOrderTotals,
   formatProductVariantName,
@@ -14,12 +23,19 @@ import {
 } from "@/lib/utils";
 import type {
   DailyClosing,
+  Member,
+  MemberTier,
   PosPaymentSummary,
   Product,
+  Promotion,
   Sale,
   SaleItem,
+  SalePayment,
   SalePaymentMethod,
-  SaleStatus
+  SaleReturn,
+  SaleReturnItem,
+  SaleStatus,
+  StockMovement
 } from "@/types";
 
 const hasDatabase = Boolean(process.env.DATABASE_URL);
@@ -31,15 +47,21 @@ type PosSaleInput = {
     quantity: number;
   }>;
   discount?: number;
+  pricingKey?: string;
+  expectedNetAmount?: number;
   paymentMethod?: SalePaymentMethod;
   receivedAmount?: number;
   memberId?: string;
+  paymentReference?: string;
+  payments?: SalePayment[];
+  idempotencyKey?: string;
 };
 
 type PosSaleResult = {
   ok: boolean;
   message: string;
   sale?: Sale;
+  priceChanged?: boolean;
 };
 
 type PosSaleHistoryFilters = {
@@ -52,6 +74,7 @@ type PosSaleHistoryFilters = {
 type StoreSnapshot = Awaited<ReturnType<typeof readLocalStore>>;
 
 export async function getSales(options?: { includeInactive?: boolean }): Promise<Sale[]> {
+  await requireAuthenticatedUser();
   if (!hasDatabase) {
     const store = await readLocalStore();
     const sales = store.sales ?? [];
@@ -79,6 +102,7 @@ export async function getPosSaleHistory(filters?: PosSaleHistoryFilters): Promis
   summary: PosPaymentSummary;
   paymentMethod: SalePaymentMethod | "ALL";
 }> {
+  await requireAuthenticatedUser();
   const search = filters?.search?.trim().toLowerCase();
   const paymentMethod = parsePaymentFilter(filters?.paymentMethod);
   const dateRange = getDateRange(filters?.date);
@@ -87,7 +111,7 @@ export async function getPosSaleHistory(filters?: PosSaleHistoryFilters): Promis
   if (hasDatabase && !search) {
     const filteredSales = (await prisma.sale.findMany({
       where: {
-        status: "ACTIVE",
+        status: { in: ["ACTIVE", "PARTIALLY_RETURNED"] },
         paymentMethod: paymentMethod === "ALL" ? undefined : paymentMethod,
         createdAt: dateRange
           ? {
@@ -185,11 +209,20 @@ async function enrichSaleItemImages(sales: Sale[]) {
 }
 
 function summarizeSales(sales: Sale[]): PosPaymentSummary {
-  return sales.filter(isActiveSale).reduce(
+  return sales.filter(isCountedSale).reduce(
     (summary, sale) => {
-      const amount = sale.netAmount;
+      const amount = effectiveSaleAmount(sale);
 
-      if (sale.paymentMethod === "TRANSFER") {
+      if (sale.paymentMethod === "SPLIT" && sale.payments?.length) {
+        let remainingRefund = sale.refundAmount ?? 0;
+        for (const payment of sale.payments) {
+          const paidAfterRefund = Math.max(0, payment.amount - remainingRefund);
+          remainingRefund = Math.max(0, remainingRefund - payment.amount);
+          if (payment.method === "TRANSFER") summary.transferAmount += paidAfterRefund;
+          else if (payment.method === "OTHER") summary.otherAmount += paidAfterRefund;
+          else summary.cashAmount += paidAfterRefund;
+        }
+      } else if (sale.paymentMethod === "TRANSFER") {
         summary.transferAmount += amount;
       } else if (sale.paymentMethod === "OTHER") {
         summary.otherAmount += amount;
@@ -199,7 +232,7 @@ function summarizeSales(sales: Sale[]): PosPaymentSummary {
 
       summary.totalAmount += amount;
       summary.billCount += 1;
-      summary.profit += sale.profit;
+      summary.profit += sale.profit - (sale.refundAmount ?? 0) + (sale.returnedCost ?? 0);
 
       return summary;
     },
@@ -215,12 +248,17 @@ function summarizeSales(sales: Sale[]): PosPaymentSummary {
 }
 
 export async function voidPosSale(formData: FormData): Promise<void> {
+  const currentUser = await requireAuthenticatedUser();
   const saleId = String(formData.get("saleId") ?? "");
   const status = parseSaleStatus(formData.get("status"));
   const reason = String(formData.get("reason") ?? "").trim() || null;
   const note = String(formData.get("note") ?? "").trim() || null;
+  const approval = verifyOwnerApproval(
+    currentUser,
+    String(formData.get("approvalPin") ?? "")
+  );
 
-  if (!saleId || !status) {
+  if (!saleId || !status || !approval) {
     return;
   }
 
@@ -230,7 +268,7 @@ export async function voidPosSale(formData: FormData): Promise<void> {
     await updateLocalStore((store) => {
       const sale = store.sales.find((item) => item.id === saleId);
 
-      if (!sale || !isActiveSale(sale)) {
+      if (!sale || !isFullyActiveSale(sale)) {
         return store;
       }
 
@@ -243,60 +281,296 @@ export async function voidPosSale(formData: FormData): Promise<void> {
                 status,
                 voidReason: reason,
                 voidNote: note,
+                approvedById: approval.id,
+                approvedByName: approval.name,
                 voidedAt: now,
                 restockedAt: now,
                 updatedAt: now
               }
             : item
         ),
-        products: restockProducts(store.products, sale.items, now)
+        products: restockProducts(store.products, sale.items, now),
+        stockMovements: [
+          ...buildLocalRestockMovements(store.products, sale.items, {
+            type: reason === "ປ່ຽນສິນຄ້າ" ? "EXCHANGE" : "SALE_RETURN",
+            referenceType: "SALE",
+            referenceId: sale.id,
+            referenceNo: sale.saleNo,
+            reason,
+            userId: currentUser.id,
+            userName: currentUser.name,
+            createdAt: now
+          }),
+          ...(store.stockMovements ?? [])
+        ],
+        auditLogs: [
+          {
+            id: crypto.randomUUID(),
+            action: status === "RETURNED" ? "SALE_RETURNED" : "SALE_CANCELLED",
+            entityType: "SALE",
+            entityId: sale.id,
+            entityNo: sale.saleNo,
+            description: reason ?? "ຍົກເລີກ/ຄືນບິນ",
+            userId: currentUser.id,
+            userName: currentUser.name,
+            userRole: currentUser.role,
+            approvedById: approval.id,
+            approvedByName: approval.name,
+            metadata: { note, status },
+            createdAt: now
+          },
+          ...(store.auditLogs ?? [])
+        ]
       };
     });
     revalidatePosPaths();
     return;
   }
 
-  const sale = (await prisma.sale.findUnique({
-    where: { id: saleId }
-  })) as unknown as Sale | null;
+  await prisma.$transaction(async (tx) => {
+    const sale = (await tx.sale.findUnique({
+      where: { id: saleId }
+    })) as unknown as Sale | null;
 
-  if (!sale || !isActiveSale(sale)) {
+    if (!sale || !isFullyActiveSale(sale)) {
+      return;
+    }
+
+    await restockSaleItemsInDatabase(tx, sale.items, {
+      type: reason === "ປ່ຽນສິນຄ້າ" ? "EXCHANGE" : "SALE_RETURN",
+      referenceType: "SALE",
+      referenceId: sale.id,
+      referenceNo: sale.saleNo,
+      reason,
+      userId: currentUser.id,
+      userName: currentUser.name
+    });
+    await tx.sale.update({
+      where: { id: saleId },
+      data: {
+        status,
+        voidReason: reason,
+        voidNote: note,
+        approvedById: approval.id,
+        approvedByName: approval.name,
+        voidedAt: now,
+        restockedAt: now
+      }
+    });
+    await tx.auditLog.create({
+      data: {
+        action: status === "RETURNED" ? "SALE_RETURNED" : "SALE_CANCELLED",
+        entityType: "SALE",
+        entityId: sale.id,
+        entityNo: sale.saleNo,
+        description: reason ?? "ຍົກເລີກ/ຄືນບິນ",
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        approvedById: approval.id,
+        approvedByName: approval.name,
+        metadata: { note, status }
+      }
+    });
+  });
+
+  revalidatePosPaths();
+}
+
+export async function returnPosSaleItems(formData: FormData): Promise<void> {
+  const currentUser = await requireAuthenticatedUser();
+  const saleId = String(formData.get("saleId") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim();
+  const note = String(formData.get("note") ?? "").trim() || null;
+  const refundMethod = parseSalePaymentMethod(
+    String(formData.get("refundMethod") ?? "CASH") as SalePaymentMethod
+  );
+  const approval = verifyOwnerApproval(
+    currentUser,
+    String(formData.get("approvalPin") ?? "")
+  );
+
+  if (!saleId || !reason || !approval) return;
+
+  if (!hasDatabase) {
+    await updateLocalStore((store) => {
+      const sale = store.sales.find((item) => item.id === saleId);
+      if (!sale || !isCountedSale(sale)) return store;
+
+      const previousReturns = (store.saleReturns ?? []).filter(
+        (item) => item.saleId === saleId
+      );
+      const returnItems = buildRequestedReturnItems(sale, previousReturns, formData);
+      if (!returnItems.length) return store;
+
+      const now = new Date();
+      const refundAmount = calculateRefundAmount(sale, returnItems);
+      const returnedCost = returnItems.reduce(
+        (sum, item) => sum + item.cost * item.quantity,
+        0
+      );
+      const saleReturn: SaleReturn = {
+        id: crypto.randomUUID(),
+        returnNo: buildReadableNumber(
+          "RET",
+          now,
+          (store.saleReturns ?? []).filter((item) => isSameDay(item.createdAt, now)).length + 1
+        ),
+        saleId: sale.id,
+        saleNo: sale.saleNo,
+        items: returnItems,
+        refundAmount,
+        returnedCost,
+        paymentMethod: refundMethod === "SPLIT" ? "CASH" : refundMethod,
+        reason,
+        note,
+        processedById: currentUser.id,
+        processedByName: currentUser.name,
+        approvedById: approval.id,
+        approvedByName: approval.name,
+        createdAt: now
+      };
+      const allReturns = [...previousReturns, saleReturn];
+      const fullyReturned = isSaleFullyReturned(sale, allReturns);
+
+      return {
+        ...store,
+        sales: store.sales.map((item) =>
+          item.id === sale.id
+            ? {
+                ...item,
+                status: fullyReturned ? "RETURNED" : "PARTIALLY_RETURNED",
+                refundAmount: (item.refundAmount ?? 0) + refundAmount,
+                returnedCost: (item.returnedCost ?? 0) + returnedCost,
+                approvedById: approval.id,
+                approvedByName: approval.name,
+                updatedAt: now
+              }
+            : item
+        ),
+        products: restockProducts(store.products, returnItems, now),
+        saleReturns: [saleReturn, ...(store.saleReturns ?? [])],
+        stockMovements: [
+          ...buildLocalRestockMovements(store.products, returnItems, {
+            type: reason === "ປ່ຽນສິນຄ້າ" ? "EXCHANGE" : "SALE_RETURN",
+            referenceType: "SALE_RETURN",
+            referenceId: saleReturn.id,
+            referenceNo: saleReturn.returnNo,
+            reason,
+            userId: currentUser.id,
+            userName: currentUser.name,
+            createdAt: now
+          }),
+          ...(store.stockMovements ?? [])
+        ],
+        auditLogs: [
+          {
+            id: crypto.randomUUID(),
+            action: "PARTIAL_SALE_RETURN",
+            entityType: "SALE_RETURN",
+            entityId: saleReturn.id,
+            entityNo: saleReturn.returnNo,
+            description: `ຄືນສິນຄ້າຈາກ ${sale.saleNo ?? sale.id}`,
+            userId: currentUser.id,
+            userName: currentUser.name,
+            userRole: currentUser.role,
+            approvedById: approval.id,
+            approvedByName: approval.name,
+            metadata: { saleId, refundAmount, reason },
+            createdAt: now
+          },
+          ...(store.auditLogs ?? [])
+        ]
+      };
+    });
+    revalidatePosPaths();
     return;
   }
 
-  for (const item of sale.items) {
-    const product = (await prisma.product.findUnique({
-      where: { id: item.productId }
-    })) as unknown as Product | null;
+  await prisma.$transaction(async (tx) => {
+    const sale = (await tx.sale.findUnique({ where: { id: saleId } })) as unknown as Sale | null;
+    if (!sale || !isCountedSale(sale)) return;
 
-    if (!product) {
-      continue;
-    }
+    const previousReturns = (await tx.saleReturn.findMany({
+      where: { saleId }
+    })) as unknown as SaleReturn[];
+    const returnItems = buildRequestedReturnItems(sale, previousReturns, formData);
+    if (!returnItems.length) return;
 
-    const variants = getProductVariants(product).map((variant) =>
-      variant.id === item.variantId
-        ? { ...variant, stock: variant.stock + item.quantity }
-        : variant
+    const now = new Date();
+    const refundAmount = calculateRefundAmount(sale, returnItems);
+    const returnedCost = returnItems.reduce(
+      (sum, item) => sum + item.cost * item.quantity,
+      0
     );
-
-    await prisma.product.update({
-      where: { id: product.id },
+    const returnNo = buildReadableNumber(
+      "RET",
+      now,
+      (await tx.saleReturn.count({
+        where: {
+          createdAt: {
+            gte: new Date(now.getFullYear(), now.getMonth(), now.getDate()),
+            lt: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+          }
+        }
+      })) + 1
+    );
+    const created = await tx.saleReturn.create({
       data: {
-        variants,
-        stock: variants.reduce((sum, variant) => sum + variant.stock, 0)
+        returnNo,
+        saleId,
+        saleNo: sale.saleNo,
+        items: returnItems,
+        refundAmount,
+        returnedCost,
+        paymentMethod: refundMethod === "SPLIT" ? "CASH" : refundMethod,
+        reason,
+        note,
+        processedById: currentUser.id,
+        processedByName: currentUser.name,
+        approvedById: approval.id,
+        approvedByName: approval.name
       }
     });
-  }
 
-  await prisma.sale.update({
-    where: { id: saleId },
-    data: {
-      status,
-      voidReason: reason,
-      voidNote: note,
-      voidedAt: now,
-      restockedAt: now
-    }
+    await restockSaleItemsInDatabase(tx, returnItems, {
+      type: reason === "ປ່ຽນສິນຄ້າ" ? "EXCHANGE" : "SALE_RETURN",
+      referenceType: "SALE_RETURN",
+      referenceId: created.id,
+      referenceNo: returnNo,
+      reason,
+      userId: currentUser.id,
+      userName: currentUser.name
+    });
+    const fullyReturned = isSaleFullyReturned(sale, [
+      ...previousReturns,
+      { ...created, createdAt: now } as unknown as SaleReturn
+    ]);
+    await tx.sale.update({
+      where: { id: saleId },
+      data: {
+        status: fullyReturned ? "RETURNED" : "PARTIALLY_RETURNED",
+        refundAmount: (sale.refundAmount ?? 0) + refundAmount,
+        returnedCost: (sale.returnedCost ?? 0) + returnedCost,
+        approvedById: approval.id,
+        approvedByName: approval.name
+      }
+    });
+    await tx.auditLog.create({
+      data: {
+        action: "PARTIAL_SALE_RETURN",
+        entityType: "SALE_RETURN",
+        entityId: created.id,
+        entityNo: returnNo,
+        description: `ຄືນສິນຄ້າຈາກ ${sale.saleNo ?? sale.id}`,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        approvedById: approval.id,
+        approvedByName: approval.name,
+        metadata: { saleId, refundAmount, reason }
+      }
+    });
   });
 
   revalidatePosPaths();
@@ -313,16 +587,29 @@ export async function getDailyClosing(dateValue?: string): Promise<{
     dateRange ? sale.createdAt >= dateRange.start && sale.createdAt < dateRange.end : true
   );
 
-  const store = await readLocalStore();
+  const closing = hasDatabase
+    ? ((await prisma.dailyClosing.findFirst({
+        where: { date },
+        orderBy: { closedAt: "desc" }
+      })) as unknown as DailyClosing | null)
+    : (await readLocalStore()).dailyClosings.find((item) => item.date === date) ?? null;
 
   return {
     date,
     summary: summarizeSales(sales),
-    closing: store.dailyClosings.find((closing) => closing.date === date) ?? null
+    closing
   };
 }
 
 export async function getDailyClosings(): Promise<DailyClosing[]> {
+  await requireAuthenticatedUser();
+
+  if (hasDatabase) {
+    return (await prisma.dailyClosing.findMany({
+      orderBy: { closedAt: "desc" }
+    })) as unknown as DailyClosing[];
+  }
+
   const store = await readLocalStore();
 
   return [...(store.dailyClosings ?? [])].sort(
@@ -331,6 +618,15 @@ export async function getDailyClosings(): Promise<DailyClosing[]> {
 }
 
 export async function closeDailySales(formData: FormData): Promise<void> {
+  const currentUser = await requireAuthenticatedUser();
+  const approval = verifyOwnerApproval(
+    currentUser,
+    String(formData.get("approvalPin") ?? "")
+  );
+
+  if (!approval) {
+    return;
+  }
   const date = String(formData.get("date") ?? "") || formatDateInput(new Date());
   const countedCash = Math.max(0, Math.round(Number(formData.get("countedCash") ?? 0)));
   const note = String(formData.get("note") ?? "").trim() || null;
@@ -349,18 +645,84 @@ export async function closeDailySales(formData: FormData): Promise<void> {
     countedCash,
     cashDifference: countedCash - summary.cashAmount,
     note,
+    closedById: currentUser.id,
+    closedByName: currentUser.name,
+    approvedById: approval.id,
+    approvedByName: approval.name,
     closedAt: now,
     createdAt: now,
     updatedAt: now
   };
 
-  await updateLocalStore((store) => ({
-    ...store,
-    dailyClosings: [
-      closing,
-      ...(store.dailyClosings ?? []).filter((item) => item.date !== date)
-    ]
-  }));
+  if (hasDatabase) {
+    await prisma.$transaction(async (tx) => {
+      await tx.dailyClosing.deleteMany({ where: { date } });
+      await tx.dailyClosing.create({
+        data: {
+          closingNo: closing.closingNo,
+          date: closing.date,
+          cashAmount: closing.cashAmount,
+          transferAmount: closing.transferAmount,
+          otherAmount: closing.otherAmount,
+          totalAmount: closing.totalAmount,
+          billCount: closing.billCount,
+          profit: closing.profit,
+          countedCash: closing.countedCash,
+          cashDifference: closing.cashDifference,
+          note: closing.note,
+          closedById: closing.closedById,
+          closedByName: closing.closedByName,
+          approvedById: closing.approvedById,
+          approvedByName: closing.approvedByName,
+          closedAt: closing.closedAt
+        }
+      });
+      await tx.auditLog.create({
+        data: {
+          action: "DAILY_CLOSING_SAVED",
+          entityType: "DAILY_CLOSING",
+          entityId: closing.id,
+          entityNo: closing.closingNo,
+          description: `ປິດຍອດ ${date}`,
+          userId: currentUser.id,
+          userName: currentUser.name,
+          userRole: currentUser.role,
+          approvedById: approval.id,
+          approvedByName: approval.name,
+          metadata: {
+            countedCash,
+            cashDifference: closing.cashDifference
+          }
+        }
+      });
+    });
+  } else {
+    await updateLocalStore((store) => ({
+      ...store,
+      dailyClosings: [
+        closing,
+        ...(store.dailyClosings ?? []).filter((item) => item.date !== date)
+      ],
+      auditLogs: [
+        {
+          id: crypto.randomUUID(),
+          action: "DAILY_CLOSING_SAVED",
+          entityType: "DAILY_CLOSING",
+          entityId: closing.id,
+          entityNo: closing.closingNo,
+          description: `ປິດຍອດ ${date}`,
+          userId: currentUser.id,
+          userName: currentUser.name,
+          userRole: currentUser.role,
+          approvedById: approval.id,
+          approvedByName: approval.name,
+          metadata: { countedCash, cashDifference: closing.cashDifference },
+          createdAt: now
+        },
+        ...(store.auditLogs ?? [])
+      ]
+    }));
+  }
 
   revalidatePosPaths();
   revalidatePath("/pos/closing");
@@ -371,123 +733,239 @@ export async function createPosSale(input: PosSaleInput): Promise<PosSaleResult>
   const discount = Math.max(0, Math.round(Number(input.discount ?? 0)));
   const paymentMethod = parseSalePaymentMethod(input.paymentMethod);
   const receivedAmount = Math.max(0, Math.round(Number(input.receivedAmount ?? 0)));
-  const currentUser = await getCurrentUser();
+  const payments = normalizePayments(input.payments);
+  const paymentReference = String(input.paymentReference ?? "").trim() || null;
+  const idempotencyKey =
+    String(input.idempotencyKey ?? "").trim().slice(0, 100) || crypto.randomUUID();
+  const currentUser = await requireAuthenticatedUser();
+  const discountPermissionError = validatePosDiscountPermission({
+    role: currentUser.role,
+    discount
+  });
   const requestedProductIds = [
     ...new Set(requestedItems.map((item) => item.productId))
   ];
+
+  if (discountPermissionError) {
+    return { ok: false, message: discountPermissionError };
+  }
 
   if (!requestedItems.length) {
     return { ok: false, message: "ກະລຸນາສະແກນ ຫຼືເລືອກສິນຄ້າກ່ອນ" };
   }
 
   if (!hasDatabase) {
-    const store = await readLocalStore();
-    const memberSnapshot = input.memberId
-      ? buildMemberSnapshot(input.memberId, store)
-      : emptyMemberSnapshot();
-    const build = buildSaleFromProducts(store.products, requestedItems, {
-      discount,
-      paymentMethod,
-      receivedAmount
+    const localResult: { value: PosSaleResult | null } = { value: null };
+
+    await updateLocalStore((store) => {
+      const existingSale = (store.sales ?? []).find(
+        (sale) => sale.idempotencyKey === idempotencyKey
+      );
+
+      if (existingSale) {
+        localResult.value = {
+          ok: true,
+          message: "ບິນນີ້ຖືກບັນທຶກແລ້ວ",
+          sale: currentUser.role === "STAFF" ? hideSaleCosts(existingSale) : existingSale
+        };
+        return store;
+      }
+
+      const openShift = (store.cashShifts ?? []).find(
+        (shift) => shift.cashierId === currentUser.id && shift.status === "OPEN"
+      );
+
+      if (store.storeSettings.requireShiftForSale && !openShift) {
+        localResult.value = {
+          ok: false,
+          message: "ກະລຸນາເປີດກະຂາຍກ່ອນບັນທຶກບິນ"
+        };
+        return store;
+      }
+
+      const memberSnapshot = input.memberId
+        ? buildMemberSnapshot(input.memberId, store)
+        : emptyMemberSnapshot();
+      const build = buildSaleFromProducts(store.products, requestedItems, {
+        promotions: store.promotions ?? [],
+        now: Date.now(),
+        pricingKey: input.pricingKey,
+        expectedNetAmount: input.expectedNetAmount,
+        discount,
+        paymentMethod,
+        receivedAmount,
+        payments,
+        paymentReference,
+        taxEnabled: store.storeSettings.taxEnabled,
+        taxRate: store.storeSettings.taxRate
+      });
+
+      if (!build.ok) {
+        localResult.value = { ok: false, message: build.message, priceChanged: build.priceChanged };
+        return store;
+      }
+
+      const approval = discount > 0
+        ? { id: currentUser.id, name: currentUser.name }
+        : null;
+
+      const now = new Date();
+      const sale: Sale = {
+        id: crypto.randomUUID(),
+        saleNo: buildUniqueSaleNumber(
+          now,
+          storeSaleSequence(store.sales ?? [], now),
+          idempotencyKey
+        ),
+        cashierId: currentUser.id,
+        cashierName: currentUser.name,
+        idempotencyKey,
+        branchName: store.storeSettings.defaultBranchName || null,
+        registerName: store.storeSettings.defaultRegisterName || null,
+        shiftId: openShift?.id ?? null,
+        approvedById: approval?.id ?? null,
+        approvedByName: approval?.name ?? null,
+        ...memberSnapshot,
+        status: "ACTIVE",
+        ...build.saleData,
+        createdAt: now,
+        updatedAt: now
+      };
+
+      localResult.value = {
+        ok: true,
+        message: "ບັນທຶກການຂາຍສໍາເລັດ",
+        sale: currentUser.role === "STAFF" ? hideSaleCosts(sale) : sale
+      };
+
+      return {
+        ...store,
+        sales: [sale, ...(store.sales ?? [])],
+        products: applyStockChanges(store.products, requestedItems, now),
+        stockMovements: [
+          ...buildLocalSaleStockMovements(store.products, requestedItems, sale, currentUser),
+          ...(store.stockMovements ?? [])
+        ],
+        auditLogs: [
+          {
+            id: crypto.randomUUID(),
+            action: "POS_SALE_CREATED",
+            entityType: "SALE",
+            entityId: sale.id,
+            entityNo: sale.saleNo,
+            description: `ຂາຍສິນຄ້າ ${sale.items.length} ລາຍການ`,
+            userId: currentUser.id,
+            userName: currentUser.name,
+            userRole: currentUser.role,
+            approvedById: approval?.id ?? null,
+            approvedByName: approval?.name ?? null,
+            metadata: { netAmount: sale.netAmount, discount: sale.discount },
+            createdAt: now
+          },
+          ...(store.auditLogs ?? [])
+        ]
+      };
     });
 
-    if (!build.ok) {
-      return { ok: false, message: build.message };
+    if (!localResult.value) {
+      throw new Error("Local POS transaction did not return a result");
     }
-
-    const now = new Date();
-    const sale: Sale = {
-      id: crypto.randomUUID(),
-      saleNo: buildReadableNumber("POS", now, storeSaleSequence(store.sales ?? [], now)),
-      cashierId: currentUser?.id ?? null,
-      cashierName: currentUser?.name ?? null,
-      ...memberSnapshot,
-      status: "ACTIVE",
-      ...build.saleData,
-      createdAt: now,
-      updatedAt: now
-    };
-
-    await updateLocalStore((current) => ({
-      ...current,
-      sales: [sale, ...(current.sales ?? [])],
-      products: applyStockChanges(current.products, requestedItems, now)
-    }));
 
     revalidatePosSalePaths();
 
-    return {
-      ok: true,
-      message: "ບັນທຶກການຂາຍສໍາເລັດ",
-      sale: currentUser?.role === "STAFF" ? hideSaleCosts(sale) : sale
-    };
+    return localResult.value;
   }
 
-  const products = (await prisma.product.findMany({
-    where: {
-      id: { in: requestedProductIds },
-      isActive: true
-    },
-    select: {
-      id: true,
-      name: true,
-      sku: true,
-      category: true,
-      costPrice: true,
-      sellPrice: true,
-      stock: true,
-      lowStockAlert: true,
-      imageUrl: true,
-      isActive: true,
-      variants: true,
-      createdAt: true,
-      updatedAt: true
-    }
-  })) as unknown as Product[];
   const memberSnapshot = input.memberId
-    ? buildMemberSnapshot(input.memberId, await readLocalStore())
+    ? await buildDatabaseMemberSnapshot(input.memberId)
     : emptyMemberSnapshot();
-  const build = buildSaleFromProducts(products, requestedItems, {
-    discount,
-    paymentMethod,
-    receivedAmount
-  });
+  const transactionResult = await prisma.$transaction(async (tx) => {
+    const existingSale = (await tx.sale.findUnique({
+      where: { idempotencyKey }
+    })) as unknown as Sale | null;
 
-  if (!build.ok) {
-    return { ok: false, message: build.message };
-  }
-
-  const now = new Date();
-  const saleNo = buildReadableNumber(
-    "POS",
-    now,
-    (await prisma.sale.count({
-      where: {
-        createdAt: {
-          gte: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0),
-          lt: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0)
-        }
-      }
-    })) + 1
-  );
-
-  const sale = (await prisma.sale.create({
-    data: {
-      saleNo,
-      cashierId: currentUser?.id ?? null,
-      cashierName: currentUser?.name ?? null,
-      ...memberSnapshot,
-      status: "ACTIVE",
-      ...build.saleData
+    if (existingSale) {
+      return { ok: true as const, sale: existingSale, duplicate: true as const };
     }
-  })) as unknown as Sale;
 
-  await Promise.all(
-    products.map(async (product) => {
+    const [settings, openShift] = await Promise.all([
+      tx.storeSettingsRecord.findUnique({ where: { id: "default" } }),
+      tx.cashShift.findFirst({
+        where: { cashierId: currentUser.id, status: "OPEN" },
+        orderBy: { openedAt: "desc" }
+      })
+    ]);
+
+    if (settings?.requireShiftForSale && !openShift) {
+      return { ok: false as const, message: "ກະລຸນາເປີດກະຂາຍກ່ອນບັນທຶກບິນ" };
+    }
+
+    const products = (await tx.product.findMany({
+      where: {
+        id: { in: requestedProductIds },
+        isActive: true
+      }
+    })) as unknown as Product[];
+    const build = buildSaleFromProducts(products, requestedItems, {
+      promotions: await tx.promotion.findMany({ where: { isActive: true } }) as Promotion[],
+      now: Date.now(),
+      pricingKey: input.pricingKey,
+      expectedNetAmount: input.expectedNetAmount,
+      discount,
+      paymentMethod,
+      receivedAmount,
+      payments,
+      paymentReference,
+      taxEnabled: settings?.taxEnabled ?? false,
+      taxRate: settings?.taxRate ?? 0
+    });
+
+    if (!build.ok) {
+      return { ok: false as const, message: build.message, priceChanged: build.priceChanged };
+    }
+
+    const approval = discount > 0
+      ? { id: currentUser.id, name: currentUser.name }
+      : null;
+
+    const now = new Date();
+    const saleNo = buildUniqueSaleNumber(
+      now,
+      (await tx.sale.count({
+        where: {
+          createdAt: {
+            gte: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0),
+            lt: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0)
+          }
+        }
+      })) + 1,
+      idempotencyKey
+    );
+
+    const sale = (await tx.sale.create({
+      data: {
+        saleNo,
+        cashierId: currentUser.id,
+        cashierName: currentUser.name,
+        idempotencyKey,
+        branchId: openShift?.branchId ?? null,
+        branchName: openShift?.branchName ?? settings?.defaultBranchName ?? null,
+        registerId: openShift?.registerId ?? null,
+        registerName: openShift?.registerName ?? settings?.defaultRegisterName ?? null,
+        shiftId: openShift?.id ?? null,
+        approvedById: approval?.id ?? null,
+        approvedByName: approval?.name ?? null,
+        ...memberSnapshot,
+        status: "ACTIVE",
+        ...build.saleData
+      }
+    })) as unknown as Sale;
+
+    for (const product of products) {
       const changes = requestedItems.filter((item) => item.productId === product.id);
 
       if (!changes.length) {
-        return;
+        continue;
       }
 
       const variants = getProductVariants(product).map((variant) => {
@@ -498,23 +976,142 @@ export async function createPosSale(input: PosSaleInput): Promise<PosSaleResult>
           : variant;
       });
 
-      await prisma.product.update({
+      await tx.product.update({
         where: { id: product.id },
         data: {
           variants,
           stock: variants.reduce((sum, variant) => sum + variant.stock, 0)
         }
       });
-    })
-  );
+
+      for (const change of changes) {
+        const beforeVariant = getProductVariants(product).find(
+          (variant) => variant.id === change.variantId
+        );
+        const saleItem = build.saleData.items.find(
+          (item) => item.productId === product.id && item.variantId === change.variantId
+        );
+        if (!beforeVariant || !saleItem) continue;
+        await tx.stockMovement.create({
+          data: {
+            productId: product.id,
+            variantId: change.variantId,
+            sku: beforeVariant.sku,
+            productName: product.name,
+            variantName: beforeVariant.name,
+            type: "SALE",
+            quantity: -change.quantity,
+            stockBefore: beforeVariant.stock,
+            stockAfter: beforeVariant.stock - change.quantity,
+            unitCost: saleItem.cost,
+            referenceType: "SALE",
+            referenceId: sale.id,
+            referenceNo: sale.saleNo,
+            userId: currentUser.id,
+            userName: currentUser.name,
+            branchId: openShift?.branchId ?? null
+          }
+        });
+      }
+    }
+
+    await tx.auditLog.create({
+      data: {
+        action: "POS_SALE_CREATED",
+        entityType: "SALE",
+        entityId: sale.id,
+        entityNo: sale.saleNo,
+        description: `ຂາຍສິນຄ້າ ${sale.items.length} ລາຍການ`,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userRole: currentUser.role,
+        approvedById: approval?.id ?? null,
+        approvedByName: approval?.name ?? null,
+        metadata: { netAmount: sale.netAmount, discount: sale.discount }
+      }
+    });
+
+    return { ok: true as const, sale, duplicate: false as const };
+  });
+
+  if (!transactionResult.ok) {
+    return transactionResult;
+  }
+
+  const sale = transactionResult.sale;
 
   revalidatePosSalePaths();
 
   return {
     ok: true,
     message: "ບັນທຶກການຂາຍສໍາເລັດ",
-    sale: currentUser?.role === "STAFF" ? hideSaleCosts(sale) : sale
+    sale: currentUser.role === "STAFF" ? hideSaleCosts(sale) : sale
   };
+}
+
+async function restockSaleItemsInDatabase(
+  tx: Prisma.TransactionClient,
+  items: SaleItem[],
+  context: {
+    type: "SALE_RETURN" | "EXCHANGE";
+    referenceType: string;
+    referenceId: string;
+    referenceNo?: string | null;
+    reason?: string | null;
+    userId: string;
+    userName: string;
+  }
+) {
+  for (const item of items) {
+    const product = (await tx.product.findUnique({
+      where: { id: item.productId }
+    })) as unknown as Product | null;
+
+    if (!product) {
+      continue;
+    }
+
+    const variants = getProductVariants(product).map((variant) =>
+      variant.id === item.variantId
+        ? { ...variant, stock: variant.stock + item.quantity }
+        : variant
+    );
+
+    await tx.product.update({
+      where: { id: product.id },
+      data: {
+        variants,
+        stock: variants.reduce((sum, variant) => sum + variant.stock, 0)
+      }
+    });
+
+    for (const item of items.filter((entry) => entry.productId === product.id)) {
+      const beforeVariant = getProductVariants(product).find(
+        (variant) => variant.id === item.variantId
+      );
+      if (!beforeVariant) continue;
+      await tx.stockMovement.create({
+        data: {
+          productId: product.id,
+          variantId: item.variantId,
+          sku: item.sku,
+          productName: item.name,
+          variantName: item.variantName,
+          type: context.type,
+          quantity: item.quantity,
+          stockBefore: beforeVariant.stock,
+          stockAfter: beforeVariant.stock + item.quantity,
+          unitCost: item.cost,
+          referenceType: context.referenceType,
+          referenceId: context.referenceId,
+          referenceNo: context.referenceNo,
+          reason: context.reason,
+          userId: context.userId,
+          userName: context.userName
+        }
+      });
+    }
+  }
 }
 
 function hideSaleCosts(sale: Sale): Sale {
@@ -565,6 +1162,34 @@ function buildMemberSnapshot(memberId: string | undefined, store: StoreSnapshot)
   };
 }
 
+async function buildDatabaseMemberSnapshot(memberId: string) {
+  const [member, tiers, sales] = await Promise.all([
+    prisma.member.findUnique({ where: { id: memberId } }) as unknown as Promise<Member | null>,
+    prisma.memberTier.findMany({
+      where: { isActive: true },
+      orderBy: { minSpend: "asc" }
+    }) as unknown as Promise<MemberTier[]>,
+    prisma.sale.findMany({
+      where: { memberId, status: "ACTIVE" },
+      orderBy: { createdAt: "desc" }
+    }) as unknown as Promise<Sale[]>
+  ]);
+
+  if (!member || !member.isActive) {
+    return emptyMemberSnapshot();
+  }
+
+  const summary = buildMemberSummaries([member], tiers, sales)[0];
+
+  return {
+    memberId: member.id,
+    memberName: member.name,
+    memberPhone: member.phone,
+    memberTierName: summary.tier?.name ?? null,
+    memberDiscount: summary.tier?.discountPercent ?? 0
+  };
+}
+
 function mergeRequestedItems(items: PosSaleInput["items"]) {
   const merged = new Map<string, { productId: string; variantId: string; quantity: number }>();
 
@@ -594,13 +1219,21 @@ function buildSaleFromProducts(
   products: Product[],
   requestedItems: ReturnType<typeof mergeRequestedItems>,
   options: {
+    promotions: Promotion[];
+    now: number;
+    pricingKey?: string;
+    expectedNetAmount?: number;
     discount: number;
     paymentMethod: SalePaymentMethod;
     receivedAmount: number;
+    payments: SalePayment[];
+    paymentReference: string | null;
+    taxEnabled: boolean;
+    taxRate: number;
   }
 ):
   | { ok: true; saleData: Omit<Sale, "id" | "createdAt" | "updatedAt"> }
-  | { ok: false; message: string } {
+  | { ok: false; message: string; priceChanged?: boolean } {
   const items: SaleItem[] = [];
 
   for (const requested of requestedItems) {
@@ -625,13 +1258,46 @@ function buildSaleFromProducts(
       };
     }
 
-    items.push(productToOrderItem(product, requested.quantity, variant));
+    items.push({ ...productToOrderItem(product, requested.quantity, variant),
+      ...resolvePromotionPrice(product.id, variant.id, variant.sellPrice, options.promotions, options.now) });
   }
 
   const totals = calculateOrderTotals(items);
-  const discount = Math.min(options.discount, totals.totalAmount);
-  const netAmount = totals.totalAmount - discount;
+  const promotionDiscount = getPromotionDiscount(items);
+  if (promotionDiscount > 0 && options.discount > 0) {
+    return { ok: false, priceChanged: true, message: "ບິນທີ່ມີໂປຣບໍ່ສາມາດຫຼຸດທ້າຍບິນຊໍ້າໄດ້ ກະລຸນາກວດຍອດໃໝ່" };
+  }
+  const manualDiscount = Math.min(options.discount, totals.totalAmount);
+  const discount = promotionDiscount + manualDiscount;
+  const netAmount = totals.totalAmount - manualDiscount;
+  if ((options.pricingKey !== undefined && options.pricingKey !== getPricingKey(items)) ||
+    (options.expectedNetAmount !== undefined && options.expectedNetAmount !== netAmount) ||
+    (promotionDiscount > 0 && options.pricingKey === undefined)) {
+    return { ok: false, priceChanged: true, message: "ລາຄາ ຫຼື ໂປຣໂມຊັນປ່ຽນແລ້ວ ກະລຸນາກວດຍອດ ແລະ ກົດບັນທຶກອີກຄັ້ງ" };
+  }
   const profit = netAmount - totals.totalCost;
+  const normalizedPayments =
+    options.paymentMethod === "SPLIT"
+      ? options.payments
+      : [
+          {
+            method: options.paymentMethod as Exclude<SalePaymentMethod, "SPLIT">,
+            amount: netAmount,
+            reference: options.paymentReference
+          }
+        ];
+  const paymentError = validatePosPayment({
+    method: options.paymentMethod,
+    netAmount,
+    receivedAmount: options.receivedAmount,
+    payments: normalizedPayments
+  });
+  if (paymentError) return { ok: false, message: paymentError };
+
+  const taxRate = options.taxEnabled
+    ? Math.min(100, Math.max(0, Math.round(options.taxRate)))
+    : 0;
+  const taxAmount = calculateInclusiveTax(netAmount, taxRate);
   const changeAmount =
     options.paymentMethod === "CASH"
       ? Math.max(0, options.receivedAmount - netAmount)
@@ -642,10 +1308,17 @@ function buildSaleFromProducts(
     saleData: {
       items,
       ...totals,
+      totalAmount: totals.totalAmount + promotionDiscount,
       profit,
       discount,
       netAmount,
       paymentMethod: options.paymentMethod,
+      payments: normalizedPayments,
+      paymentReference: options.paymentReference,
+      taxRate,
+      taxAmount,
+      refundAmount: 0,
+      returnedCost: 0,
       receivedAmount:
         options.paymentMethod === "CASH" ? options.receivedAmount : null,
       changeAmount: options.paymentMethod === "CASH" ? changeAmount : null
@@ -708,7 +1381,155 @@ function restockProducts(products: Product[], items: SaleItem[], updatedAt: Date
 }
 
 function isActiveSale(sale: Sale) {
+  return !sale.status || sale.status === "ACTIVE" || sale.status === "PARTIALLY_RETURNED";
+}
+
+function isFullyActiveSale(sale: Sale) {
   return !sale.status || sale.status === "ACTIVE";
+}
+
+function buildLocalSaleStockMovements(
+  products: Product[],
+  requestedItems: ReturnType<typeof mergeRequestedItems>,
+  sale: Sale,
+  user: { id: string; name: string }
+): StockMovement[] {
+  return requestedItems.flatMap((requested) => {
+    const product = products.find((item) => item.id === requested.productId);
+    const variant = product
+      ? getProductVariants(product).find((item) => item.id === requested.variantId)
+      : null;
+    const saleItem = sale.items.find(
+      (item) => item.productId === requested.productId && item.variantId === requested.variantId
+    );
+
+    if (!product || !variant || !saleItem) return [];
+
+    return [{
+      id: crypto.randomUUID(),
+      productId: product.id,
+      variantId: variant.id,
+      sku: variant.sku,
+      productName: product.name,
+      variantName: variant.name,
+      type: "SALE" as const,
+      quantity: -requested.quantity,
+      stockBefore: variant.stock,
+      stockAfter: variant.stock - requested.quantity,
+      unitCost: saleItem.cost,
+      referenceType: "SALE",
+      referenceId: sale.id,
+      referenceNo: sale.saleNo,
+      userId: user.id,
+      userName: user.name,
+      branchId: sale.branchId,
+      createdAt: sale.createdAt
+    }];
+  });
+}
+
+function buildRequestedReturnItems(
+  sale: Sale,
+  previousReturns: SaleReturn[],
+  formData: FormData
+): SaleReturnItem[] {
+  return sale.items.flatMap((item, index) => {
+    const alreadyReturned = previousReturns
+      .flatMap((saleReturn) => saleReturn.items)
+      .filter(
+        (returned) =>
+          returned.productId === item.productId && returned.variantId === item.variantId
+      )
+      .reduce((sum, returned) => sum + returned.quantity, 0);
+    const available = Math.max(0, item.quantity - alreadyReturned);
+    const requested = Math.min(
+      available,
+      Math.max(0, Math.round(Number(formData.get(`returnQty-${index}`) ?? 0)))
+    );
+
+    if (!requested) return [];
+
+    return [{
+      productId: item.productId,
+      variantId: item.variantId,
+      name: item.name,
+      variantName: item.variantName,
+      sku: item.sku,
+      quantity: requested,
+      price: item.price,
+      cost: item.cost
+    }];
+  });
+}
+
+function calculateRefundAmount(sale: Sale, items: SaleReturnItem[]) {
+  return calculateSaleRefund(sale, items);
+}
+
+function isSaleFullyReturned(sale: Sale, saleReturns: SaleReturn[]) {
+  return sale.items.every((item) => {
+    const returned = saleReturns
+      .flatMap((saleReturn) => saleReturn.items)
+      .filter(
+        (entry) =>
+          entry.productId === item.productId && entry.variantId === item.variantId
+      )
+      .reduce((sum, entry) => sum + entry.quantity, 0);
+
+    return returned >= item.quantity;
+  });
+}
+
+function buildLocalRestockMovements(
+  products: Product[],
+  items: SaleItem[],
+  context: {
+    type: "SALE_RETURN" | "EXCHANGE";
+    referenceType: string;
+    referenceId: string;
+    referenceNo?: string | null;
+    reason?: string | null;
+    userId: string;
+    userName: string;
+    createdAt: Date;
+  }
+): StockMovement[] {
+  return items.flatMap((item) => {
+    const product = products.find((entry) => entry.id === item.productId);
+    const variant = product
+      ? getProductVariants(product).find((entry) => entry.id === item.variantId)
+      : null;
+    if (!product || !variant) return [];
+
+    return [{
+      id: crypto.randomUUID(),
+      productId: product.id,
+      variantId: item.variantId,
+      sku: item.sku,
+      productName: item.name,
+      variantName: item.variantName,
+      type: context.type,
+      quantity: item.quantity,
+      stockBefore: variant.stock,
+      stockAfter: variant.stock + item.quantity,
+      unitCost: item.cost,
+      referenceType: context.referenceType,
+      referenceId: context.referenceId,
+      referenceNo: context.referenceNo,
+      reason: context.reason,
+      userId: context.userId,
+      userName: context.userName,
+      createdAt: context.createdAt
+    }];
+  });
+}
+
+function isCountedSale(sale: Sale) {
+  return isActiveSale(sale);
+}
+
+function effectiveSaleAmount(sale: Sale) {
+  return Math.max(0, sale.netAmount - (sale.refundAmount ?? 0));
 }
 
 function storeSaleSequence(sales: Sale[], date: Date) {
@@ -723,7 +1544,9 @@ function storeSaleSequence(sales: Sale[], date: Date) {
 }
 
 function parseSalePaymentMethod(value?: SalePaymentMethod): SalePaymentMethod {
-  return value === "TRANSFER" || value === "OTHER" ? value : "CASH";
+  return value === "TRANSFER" || value === "OTHER" || value === "SPLIT"
+    ? value
+    : "CASH";
 }
 
 function parseSaleStatus(value: FormDataEntryValue | null): SaleStatus | null {
@@ -731,9 +1554,30 @@ function parseSaleStatus(value: FormDataEntryValue | null): SaleStatus | null {
 }
 
 function parsePaymentFilter(value?: PosSaleHistoryFilters["paymentMethod"]) {
-  return value === "CASH" || value === "TRANSFER" || value === "OTHER"
+  return value === "CASH" || value === "TRANSFER" || value === "OTHER" || value === "SPLIT"
     ? value
     : "ALL";
+}
+
+function buildUniqueSaleNumber(date: Date, sequence: number, idempotencyKey: string) {
+  const suffix = idempotencyKey.replace(/[^a-z0-9]/gi, "").slice(-4).toUpperCase();
+  return `${buildReadableNumber("POS", date, sequence)}-${suffix}`;
+}
+
+function normalizePayments(payments?: SalePayment[]): SalePayment[] {
+  if (!Array.isArray(payments)) return [];
+
+  return payments
+    .map((payment) => ({
+      method:
+        payment.method === "TRANSFER" || payment.method === "OTHER"
+          ? payment.method
+          : "CASH" as const,
+      amount: Math.max(0, Math.round(Number(payment.amount ?? 0))),
+      reference: String(payment.reference ?? "").trim() || null
+    }))
+    .filter((payment) => payment.amount > 0)
+    .slice(0, 3);
 }
 
 function getDateRange(value?: string) {

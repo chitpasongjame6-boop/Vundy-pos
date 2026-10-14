@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/input";
+import { EmptyState, FilterBar, MetricCard } from "@/components/ui/patterns";
 import { formatCurrency } from "@/lib/utils";
 
 export default async function ReportsPage({
@@ -25,7 +26,7 @@ export default async function ReportsPage({
         description="ສະຫຼຸບລາຍວັນ ຫຼື ລາຍເດືອນ ແຍກອອນລາຍ, ໜ້າຮ້ານ, ເງິນສົດ, ເງິນໂອນ, COD ແລະການຄືນ/ຍົກເລີກ"
       />
 
-      <form className="mb-4 grid gap-3 md:grid-cols-[12rem_14rem_auto]">
+      <FilterBar className="md:grid-cols-[12rem_14rem_auto]">
         <Select name="period" defaultValue={report.period}>
           <option value="DAY">ລາຍວັນ</option>
           <option value="MONTH">ລາຍເດືອນ</option>
@@ -40,17 +41,19 @@ export default async function ReportsPage({
         <Button type="submit" className="w-full md:w-auto">
           ດຶງລາຍງານ
         </Button>
-      </form>
+      </FilterBar>
 
-      <div className="mb-4 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-bold text-zinc-700">
+      <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700">
         ກໍາລັງສະແດງ: {report.rangeLabel}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-4">
-        <Summary label="ຍອດຂາຍລວມ" value={formatCurrency(report.totalSales)} />
-        <Summary label="ກໍາໄລລວມ" value={formatCurrency(report.totalProfit)} tone="emerald" />
-        <Summary label="ອັດຕາກໍາໄລ" value={`${margin}%`} />
-        <Summary
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        <MetricCard label="ຍອດຂາຍລວມ" value={formatCurrency(report.totalSales)} tone="indigo" />
+        <MetricCard label="ກໍາໄລລວມ" value={formatCurrency(report.totalProfit)} tone="emerald" />
+        <MetricCard label="ຄ່າໃຊ້ຈ່າຍ" value={formatCurrency(report.expenseAmount)} tone="amber" />
+        <MetricCard label="ກໍາໄລສຸດທິ" value={formatCurrency(report.netProfit)} tone={report.netProfit >= 0 ? "emerald" : "amber"} />
+        <MetricCard label="ອັດຕາກໍາໄລ" value={`${margin}%`} tone="sky" />
+        <MetricCard
           label="ບິນ/ອໍເດີທີ່ນັບຍອດ"
           value={`${report.shippedOrders + report.posBills}`}
         />
@@ -102,14 +105,14 @@ export default async function ReportsPage({
             report.topProducts.map((item, index) => (
               <div
                 key={`${item.sku}-${index}`}
-                className="grid grid-cols-[2rem_1fr_auto] items-center gap-3 rounded-md border border-zinc-200 p-3"
+                className="grid grid-cols-[2rem_1fr_auto] items-center gap-3 rounded-xl border border-slate-200 p-3"
               >
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-teal-50 text-sm font-bold text-teal-700">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-teal-50 text-sm font-bold text-teal-700">
                   {index + 1}
                 </div>
                 <div>
-                  <p className="font-bold text-zinc-950">{item.name}</p>
-                  <p className="text-sm text-zinc-500">
+                  <p className="font-bold text-slate-950">{item.name}</p>
+                  <p className="text-sm text-slate-500">
                     SKU: {item.sku} · ຂາຍ {item.quantity}
                   </p>
                 </div>
@@ -117,32 +120,11 @@ export default async function ReportsPage({
               </div>
             ))
           ) : (
-            <p className="text-sm text-zinc-500">ບໍ່ມີຂໍ້ມູນຂາຍໃນຊ່ວງນີ້</p>
+            <EmptyState title="ບໍ່ມີຂໍ້ມູນຂາຍໃນຊ່ວງນີ້" description="ລອງເລືອກວັນ ຫຼື ເດືອນອື່ນ" />
           )}
         </CardContent>
       </Card>
     </section>
-  );
-}
-
-function Summary({
-  label,
-  value,
-  tone = "zinc"
-}: {
-  label: string;
-  value: string;
-  tone?: "zinc" | "emerald";
-}) {
-  return (
-    <Card>
-      <CardContent>
-        <p className="text-sm text-zinc-500">{label}</p>
-        <p className={tone === "emerald" ? "mt-1 text-2xl font-bold text-emerald-700" : "mt-1 text-2xl font-bold"}>
-          {value}
-        </p>
-      </CardContent>
-    </Card>
   );
 }
 
@@ -158,8 +140,8 @@ function ReportBlock({
   strong?: boolean;
 }) {
   return (
-    <div className="rounded-md border border-zinc-200 p-3">
-      <p className="text-sm font-bold text-zinc-950">{label}</p>
+    <div className="rounded-xl border border-slate-200 p-3">
+      <p className="text-sm font-bold text-slate-950">{label}</p>
       <div className="mt-3 space-y-2">
         <MiniLine label="ຍອດຂາຍ" value={formatCurrency(sales)} strong={strong} />
         <MiniLine label="ກໍາໄລ" value={formatCurrency(profit)} tone="emerald" strong={strong} />
@@ -184,11 +166,11 @@ function MiniLine({
       ? "text-emerald-700"
       : tone === "rose"
         ? "text-rose-700"
-        : "text-zinc-950";
+        : "text-slate-950";
 
   return (
-    <div className="flex items-center justify-between gap-3 rounded-md bg-zinc-50 p-3">
-      <span className="text-sm text-zinc-500">{label}</span>
+    <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-3">
+      <span className="text-sm text-slate-500">{label}</span>
       <strong className={`${color} ${strong ? "text-lg" : ""}`}>{value}</strong>
     </div>
   );

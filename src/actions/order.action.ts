@@ -2,9 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { readLocalStore, updateLocalStore } from "@/lib/local-store";
 import { buildReadableNumber } from "@/lib/document-number";
+import { requireOwner } from "@/lib/auth";
 import {
   calculateOrderTotals,
   formatProductVariantName,
@@ -28,6 +30,7 @@ export async function getOrders(filters?: {
   date?: string;
   limit?: number;
 }) {
+  await requireOwner();
   const dateRange = getDateRange(filters?.date);
   const limit = normalizeLimit(filters?.limit);
 
@@ -195,6 +198,7 @@ function storeOrderSequence(orders: Order[], date: Date) {
 }
 
 export async function createOrder(formData: FormData) {
+  await requireOwner();
   const requestedItems = getRequestedOrderItems(formData);
   const customerName = String(formData.get("customerName") ?? "").trim();
   const phone = String(formData.get("phone") ?? "").trim();
@@ -217,110 +221,134 @@ export async function createOrder(formData: FormData) {
   }
 
   if (!hasDatabase) {
-    const store = await readLocalStore();
-    const build = buildOrderItemsFromProducts(store.products, requestedItems);
+    const localResult: {
+      value: { ok: boolean; message: string } | null;
+    } = { value: null };
+
+    await updateLocalStore((store) => {
+      const build = buildOrderItemsFromProducts(store.products, requestedItems);
+
+      if (!build.ok) {
+        localResult.value = { ok: false, message: build.message };
+        return store;
+      }
+
+      const totals = calculateOrderTotals(build.items);
+      const now = new Date();
+      const order: Order = {
+        id: crypto.randomUUID(),
+        orderNo: buildReadableNumber("ORD", now, storeOrderSequence(store.orders, now)),
+        customerName,
+        phone,
+        province,
+        city,
+        shippingCompany,
+        pickupBranch,
+        paymentStatus,
+        status: "PENDING_PACK",
+        items: build.items,
+        ...totals,
+        note,
+        createdAt: now,
+        updatedAt: now
+      };
+
+      localResult.value = { ok: true, message: "ສ້າງອໍເດີແລ້ວ" };
+
+      return {
+        ...store,
+        orders: [order, ...store.orders],
+        products: applyOrderStockChanges(store.products, requestedItems, now)
+      };
+    });
+
+    if (!localResult.value) {
+      throw new Error("Local order transaction did not return a result");
+    }
+
+    if (!localResult.value.ok) {
+      return localResult.value;
+    }
+
+    revalidateAfterOrderCreate();
+
+    return localResult.value;
+  }
+
+  const transactionResult = await prisma.$transaction(async (tx) => {
+    const products = (await tx.product.findMany({
+      where: {
+        id: { in: [...new Set(requestedItems.map((item) => item.productId))] },
+        isActive: true
+      }
+    })) as unknown as Product[];
+    const build = buildOrderItemsFromProducts(products, requestedItems);
 
     if (!build.ok) {
-      return { ok: false, message: build.message };
+      return { ok: false as const, message: build.message };
     }
 
     const totals = calculateOrderTotals(build.items);
     const now = new Date();
-    const order: Order = {
-      id: crypto.randomUUID(),
-      orderNo: buildReadableNumber("ORD", now, storeOrderSequence(store.orders, now)),
-      customerName,
-      phone,
-      province,
-      city,
-      shippingCompany,
-      pickupBranch,
-      paymentStatus,
-      status: "PENDING_PACK",
-      items: build.items,
-      ...totals,
-      note,
-      createdAt: now,
-      updatedAt: now
-    };
-
-    await updateLocalStore((current) => ({
-      ...current,
-      orders: [order, ...current.orders],
-      products: applyOrderStockChanges(current.products, requestedItems, now)
-    }));
-
-    revalidateAfterOrderCreate();
-
-    return { ok: true, message: "ສ້າງອໍເດີແລ້ວ" };
-  }
-
-  const products = (await prisma.product.findMany({
-    where: {
-      id: { in: [...new Set(requestedItems.map((item) => item.productId))] },
-      isActive: true
-    }
-  })) as unknown as Product[];
-  const build = buildOrderItemsFromProducts(products, requestedItems);
-
-  if (!build.ok) {
-    return { ok: false, message: build.message };
-  }
-
-  const totals = calculateOrderTotals(build.items);
-  const now = new Date();
-  const orderNo = buildReadableNumber(
-    "ORD",
-    now,
-    (await prisma.order.count({
-      where: {
-        createdAt: {
-          gte: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0),
-          lt: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0)
+    const orderNo = buildReadableNumber(
+      "ORD",
+      now,
+      (await tx.order.count({
+        where: {
+          createdAt: {
+            gte: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0),
+            lt: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0)
+          }
         }
-      }
-    })) + 1
-  );
+      })) + 1
+    );
 
-  await prisma.order.create({
-    data: {
-      orderNo,
-      customerName,
-      phone,
-      province,
-      city,
-      shippingCompany,
-      pickupBranch,
-      paymentStatus,
-      status: "PENDING_PACK",
-      items: build.items,
-      ...totals,
-      note
+    await tx.order.create({
+      data: {
+        orderNo,
+        customerName,
+        phone,
+        province,
+        city,
+        shippingCompany,
+        pickupBranch,
+        paymentStatus,
+        status: "PENDING_PACK",
+        items: build.items,
+        ...totals,
+        note
+      }
+    });
+
+    for (const product of products) {
+      const changes = requestedItems.filter((item) => item.productId === product.id);
+
+      if (!changes.length) {
+        continue;
+      }
+
+      const variants = getProductVariants(product).map((variant) => {
+        const quantity = changes
+          .filter((item) => item.variantId === variant.id)
+          .reduce((sum, item) => sum + item.quantity, 0);
+
+        return quantity ? { ...variant, stock: variant.stock - quantity } : variant;
+      });
+
+      await tx.product.update({
+        where: { id: product.id },
+        data: {
+          variants,
+          stock: variants.reduce((sum, variant) => sum + variant.stock, 0)
+        }
+      });
     }
+
+    return { ok: true as const };
   });
 
-  for (const product of products) {
-    const changes = requestedItems.filter((item) => item.productId === product.id);
-
-    if (!changes.length) {
-      continue;
-    }
-
-    const variants = getProductVariants(product).map((variant) => {
-      const quantity = changes
-        .filter((item) => item.variantId === variant.id)
-        .reduce((sum, item) => sum + item.quantity, 0);
-
-      return quantity ? { ...variant, stock: variant.stock - quantity } : variant;
-    });
-
-    await prisma.product.update({
-      where: { id: product.id },
-      data: {
-        variants,
-        stock: variants.reduce((sum, variant) => sum + variant.stock, 0)
-      }
-    });
+  if (!transactionResult.ok) {
+    return transactionResult;
   }
 
   revalidateAfterOrderCreate();
@@ -442,6 +470,14 @@ export async function updateOrderStatus(
   status: OrderStatus,
   returnDetails?: { reason?: string | null; note?: string | null }
 ) {
+  await requireOwner();
+
+  if (status === "CANCELLED") {
+    await cancelOrderById(orderId);
+    revalidateAfterOrderChange();
+    return { ok: true, message: "ຍົກເລີກອໍເດີ ແລະ ຄືນສະຕ໋ອກແລ້ວ" };
+  }
+
   const now = new Date();
   const returnedData =
     status === "RETURNED"
@@ -453,27 +489,112 @@ export async function updateOrderStatus(
       : {};
 
   if (!hasDatabase) {
-    await updateLocalStore((store) => ({
-      ...store,
-      orders: store.orders.map((order) =>
-        order.id === orderId ? { ...order, status, ...returnedData, updatedAt: now } : order
-      )
-    }));
+    let result = { ok: false, message: "ບໍ່ສາມາດປ່ຽນສະຖານະອໍເດີນີ້ໄດ້" };
+
+    await updateLocalStore((store) => {
+      const order = store.orders.find((item) => item.id === orderId);
+
+      if (!order || order.status === "RETURNED") {
+        return store;
+      }
+
+      let products = store.products;
+
+      if (order.status === "CANCELLED") {
+        if (status === "RETURNED") {
+          return store;
+        }
+
+        const requestedItems = getRequestedItemsFromOrder(order.items);
+        const build = buildOrderItemsFromProducts(products, requestedItems);
+
+        if (!build.ok) {
+          result = { ok: false, message: build.message };
+          return store;
+        }
+
+        products = applyOrderStockChanges(products, requestedItems, now);
+      }
+
+      result = { ok: true, message: "ປ່ຽນສະຖານະອໍເດີແລ້ວ" };
+
+      return {
+        ...store,
+        products,
+        orders: store.orders.map((item) =>
+          item.id === orderId
+            ? {
+                ...item,
+                status,
+                ...returnedData,
+                restockedAt: order.status === "CANCELLED" ? null : item.restockedAt,
+                updatedAt: now
+              }
+            : item
+        )
+      };
+    });
+
+    if (!result.ok) {
+      return result;
+    }
+
     revalidateAfterOrderChange();
 
-    return { ok: true, message: "ປ່ຽນສະຖານະແລ້ວ" };
+    return result;
   }
 
-  await prisma.order.update({
-    where: { id: orderId },
-    data: { status, ...returnedData }
+  const result = await prisma.$transaction(async (tx) => {
+    const order = (await tx.order.findUnique({
+      where: { id: orderId }
+    })) as unknown as Order | null;
+
+    if (!order || order.status === "RETURNED") {
+      return { ok: false, message: "ບໍ່ສາມາດປ່ຽນສະຖານະອໍເດີນີ້ໄດ້" };
+    }
+
+    if (order.status === "CANCELLED") {
+      if (status === "RETURNED") {
+        return { ok: false, message: "ກະລຸນາເປີດອໍເດີຄືນກ່ອນບັນທຶກສິນຄ້າຕີກັບ" };
+      }
+
+      const reserved = await reserveOrderItemsInDatabase(tx, order.items);
+
+      if (!reserved.ok) {
+        return reserved;
+      }
+    }
+
+    await tx.order.update({
+      where: { id: orderId },
+      data: {
+        status,
+        ...returnedData,
+        restockedAt: order.status === "CANCELLED" ? null : order.restockedAt
+      }
+    });
+
+    return { ok: true, message: "ປ່ຽນສະຖານະອໍເດີແລ້ວ" };
   });
+
+  if (!result.ok) {
+    return result;
+  }
+
   revalidateAfterOrderChange();
 
-  return { ok: true, message: "ປ່ຽນສະຖານະອໍເດີແລ້ວ" };
+  return result;
 }
 
-export async function updateOrderStatusFromForm(formData: FormData): Promise<void> {
+type OrderStatusFormState = {
+  ok: boolean | null;
+  message: string;
+};
+
+export async function updateOrderStatusFromForm(
+  _previousState: OrderStatusFormState,
+  formData: FormData
+): Promise<OrderStatusFormState> {
   const orderId = String(formData.get("orderId") ?? "");
   const status = String(formData.get("status") ?? "") as OrderStatus;
   const returnReason = String(formData.get("returnReason") ?? "").trim();
@@ -487,16 +608,17 @@ export async function updateOrderStatusFromForm(formData: FormData): Promise<voi
   ];
 
   if (!orderId || !allowedStatuses.includes(status)) {
-    return;
+    return { ok: false, message: "ຂໍ້ມູນສະຖານະບໍ່ຖືກຕ້ອງ" };
   }
 
-  await updateOrderStatus(orderId, status, {
+  return updateOrderStatus(orderId, status, {
     reason: returnReason,
     note: returnNote
   });
 }
 
 export async function restockReturnedOrder(formData: FormData): Promise<void> {
+  await requireOwner();
   const orderId = String(formData.get("orderId") ?? "");
 
   if (!orderId) {
@@ -526,41 +648,20 @@ export async function restockReturnedOrder(formData: FormData): Promise<void> {
     return;
   }
 
-  const order = (await prisma.order.findUnique({
-    where: { id: orderId }
-  })) as unknown as Order | null;
+  await prisma.$transaction(async (tx) => {
+    const order = (await tx.order.findUnique({
+      where: { id: orderId }
+    })) as unknown as Order | null;
 
-  if (!order || order.status !== "RETURNED" || order.restockedAt) {
-    return;
-  }
-
-  for (const item of order.items) {
-    const product = (await prisma.product.findUnique({
-      where: { id: item.productId }
-    })) as unknown as Product | null;
-
-    if (!product) {
-      continue;
+    if (!order || order.status !== "RETURNED" || order.restockedAt) {
+      return;
     }
 
-    const variants = getProductVariants(product).map((variant) =>
-      variant.id === item.variantId
-        ? { ...variant, stock: variant.stock + item.quantity }
-        : variant
-    );
-
-    await prisma.product.update({
-      where: { id: product.id },
-      data: {
-        variants,
-        stock: variants.reduce((sum, variant) => sum + variant.stock, 0)
-      }
+    await restockOrderItemsInDatabase(tx, order.items);
+    await tx.order.update({
+      where: { id: orderId },
+      data: { restockedAt: now }
     });
-  }
-
-  await prisma.order.update({
-    where: { id: orderId },
-    data: { restockedAt: now }
   });
 
   revalidateAfterOrderChange();
@@ -616,34 +717,164 @@ function revalidateAfterOrderChange() {
 }
 
 export async function cancelOrder(formData: FormData): Promise<void> {
+  await requireOwner();
   const orderId = String(formData.get("orderId") ?? "");
 
   if (!orderId) {
     return;
   }
 
-  if (!hasDatabase) {
-    await updateLocalStore((store) => ({
-      ...store,
-      orders: store.orders.map((order) =>
-        order.id === orderId
-          ? { ...order, status: "CANCELLED", updatedAt: new Date() }
-          : order
-      )
-    }));
-    revalidateAfterOrderChange();
-    return;
-  }
-
-  await prisma.order.update({
-    where: { id: orderId },
-    data: { status: "CANCELLED" }
-  });
-
+  await cancelOrderById(orderId);
   revalidateAfterOrderChange();
 }
 
+async function cancelOrderById(orderId: string) {
+  const now = new Date();
+
+  if (!hasDatabase) {
+    await updateLocalStore((store) => {
+      const order = store.orders.find((item) => item.id === orderId);
+
+      if (
+        !order ||
+        order.status === "RETURNED" ||
+        (order.status === "CANCELLED" && order.restockedAt)
+      ) {
+        return store;
+      }
+
+      return {
+        ...store,
+        orders: store.orders.map((item) =>
+          item.id === orderId
+            ? { ...item, status: "CANCELLED", restockedAt: now, updatedAt: now }
+            : item
+        ),
+        products: order.restockedAt
+          ? store.products
+          : restockProducts(store.products, order.items, now)
+      };
+    });
+    return;
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const order = (await tx.order.findUnique({
+      where: { id: orderId }
+    })) as unknown as Order | null;
+
+    if (
+      !order ||
+      order.status === "RETURNED" ||
+      (order.status === "CANCELLED" && order.restockedAt)
+    ) {
+      return;
+    }
+
+    if (!order.restockedAt) {
+      await restockOrderItemsInDatabase(tx, order.items);
+    }
+
+    await tx.order.update({
+      where: { id: orderId },
+      data: { status: "CANCELLED", restockedAt: order.restockedAt ?? now }
+    });
+  });
+}
+
+function getRequestedItemsFromOrder(items: OrderItem[]) {
+  const requestedItems = new Map<string, RequestedOrderItem>();
+
+  for (const item of items) {
+    const variantId = item.variantId ?? "";
+    const key = `${item.productId}::${variantId}`;
+    const current = requestedItems.get(key);
+
+    requestedItems.set(key, {
+      productId: item.productId,
+      variantId,
+      quantity: (current?.quantity ?? 0) + item.quantity
+    });
+  }
+
+  return Array.from(requestedItems.values());
+}
+
+async function reserveOrderItemsInDatabase(
+  tx: Prisma.TransactionClient,
+  items: OrderItem[]
+) {
+  const requestedItems = getRequestedItemsFromOrder(items);
+  const products = (await tx.product.findMany({
+    where: {
+      id: { in: [...new Set(requestedItems.map((item) => item.productId))] },
+      isActive: true
+    }
+  })) as unknown as Product[];
+  const build = buildOrderItemsFromProducts(products, requestedItems);
+
+  if (!build.ok) {
+    return build;
+  }
+
+  for (const product of products) {
+    const changes = requestedItems.filter((item) => item.productId === product.id);
+
+    if (!changes.length) {
+      continue;
+    }
+
+    const variants = getProductVariants(product).map((variant) => {
+      const quantity = changes
+        .filter((item) => item.variantId === variant.id)
+        .reduce((sum, item) => sum + item.quantity, 0);
+
+      return quantity ? { ...variant, stock: variant.stock - quantity } : variant;
+    });
+
+    await tx.product.update({
+      where: { id: product.id },
+      data: {
+        variants,
+        stock: variants.reduce((sum, variant) => sum + variant.stock, 0)
+      }
+    });
+  }
+
+  return { ok: true as const };
+}
+
+async function restockOrderItemsInDatabase(
+  tx: Prisma.TransactionClient,
+  items: OrderItem[]
+) {
+  for (const item of items) {
+    const product = (await tx.product.findUnique({
+      where: { id: item.productId }
+    })) as unknown as Product | null;
+
+    if (!product) {
+      continue;
+    }
+
+    const variants = getProductVariants(product).map((variant) =>
+      variant.id === item.variantId
+        ? { ...variant, stock: variant.stock + item.quantity }
+        : variant
+    );
+
+    await tx.product.update({
+      where: { id: product.id },
+      data: {
+        variants,
+        stock: variants.reduce((sum, variant) => sum + variant.stock, 0)
+      }
+    });
+  }
+}
+
 export async function updateOrderInfo(formData: FormData): Promise<void> {
+  await requireOwner();
   const orderId = String(formData.get("orderId") ?? "");
   const customerName = String(formData.get("customerName") ?? "").trim();
   const phone = String(formData.get("phone") ?? "").trim();

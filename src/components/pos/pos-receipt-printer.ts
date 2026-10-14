@@ -28,7 +28,7 @@ function getPosReceiptHtml(
   storeSettings: StoreSettings,
   logoUrl: string
 ) {
-  return buildPosReceiptHtml(sale, storeSettings, logoUrl);
+  return buildPosReceiptHtml(sale, storeSettings, logoUrl, window.location.origin);
 
   const receiptWidth = storeSettings.posReceiptSize === "POS_58MM" ? "58mm" : "80mm";
   const logoWidth = storeSettings.posReceiptSize === "POS_58MM" ? "76px" : "96px";
@@ -163,7 +163,7 @@ function printReceiptInFrame(receiptHtml: string) {
   frameWindow.document.close();
   frameWindow.addEventListener("afterprint", removeFrame, { once: true });
   printWhenReady(frameWindow);
-  window.setTimeout(removeFrame, 10000);
+  window.setTimeout(removeFrame, 300000);
 }
 
 function printWhenReady(printWindow: Window) {
@@ -181,11 +181,10 @@ function printWhenReady(printWindow: Window) {
 
   const ready = withTimeout(
     Promise.all([waitForFonts(printWindow), waitForImages(printWindow)]),
-    900
+    5000
   );
 
   void ready.finally(printOnce);
-  window.setTimeout(printOnce, 1000);
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
@@ -203,8 +202,8 @@ function waitForFonts(printWindow: Window) {
   const fonts = printWindow.document.fonts;
 
   return Promise.all([
-    fonts.load('400 16px "Noto Sans Lao"'),
-    fonts.load('700 16px "Noto Sans Lao"'),
+    fonts.load('400 16px "Noto Sans Lao"', 'ບິນ POS ₭'),
+    fonts.load('700 16px "Noto Sans Lao"', 'ບິນ POS ₭'),
     fonts.ready
   ])
     .then(() => undefined)

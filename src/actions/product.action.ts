@@ -5,9 +5,12 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { readLocalStore, updateLocalStore } from "@/lib/local-store";
 import { saveUploadedImage } from "@/lib/object-storage";
+import { ProductImageError } from "@/lib/product-image";
+import { parseExpiryDate } from "@/lib/product-expiry";
 import { getProductVariants } from "@/lib/utils";
 import { getCategories } from "@/actions/settings.action";
-import type { Product, ProductVariant } from "@/types";
+import { requireAuthenticatedUser, requireOwner } from "@/lib/auth";
+import type { Product, ProductVariant, ProductFormState } from "@/types";
 
 const hasDatabase = Boolean(process.env.DATABASE_URL);
 
@@ -17,6 +20,7 @@ export async function getProducts(filters?: {
   activeOnly?: boolean;
   limit?: number;
 }) {
+  await requireAuthenticatedUser();
   const limit = normalizeLimit(filters?.limit);
 
   if (!hasDatabase) {
@@ -78,11 +82,14 @@ function normalizeLimit(value?: number) {
 }
 
 export async function getProductCategories() {
+  await requireAuthenticatedUser();
   return getCategories();
 }
 
 export async function createProduct(formData: FormData) {
-  const imageUrl = await saveProductImage(formData.get("productImage"));
+  await requireOwner();
+  const expiryError = validateExpiryFields(formData);
+  if (expiryError) return { ok: false, message: expiryError };
   const variants = parseProductVariants(formData);
   const firstVariant = variants[0];
   const payload = {
@@ -93,7 +100,6 @@ export async function createProduct(formData: FormData) {
     sellPrice: firstVariant?.sellPrice ?? 0,
     stock: variants.reduce((sum, variant) => sum + variant.stock, 0),
     lowStockAlert: firstVariant?.lowStockAlert ?? 0,
-    imageUrl,
     isActive: formData.get("isActive") === "on",
     variants
   };
@@ -116,11 +122,20 @@ export async function createProduct(formData: FormData) {
     return { ok: false, message: `SKU / Barcode ${conflictingSku} ມີແລ້ວ` };
   }
 
+  let imageUrl: string | null;
+  try {
+    imageUrl = await saveProductImage(formData.get("productImage"));
+  } catch (error) {
+    if (error instanceof ProductImageError) return { ok: false, message: error.message };
+    throw error;
+  }
+
   if (!hasDatabase) {
     const now = new Date();
     const product = {
       id: crypto.randomUUID(),
       ...payload,
+      imageUrl,
       createdAt: now,
       updatedAt: now
     };
@@ -141,7 +156,7 @@ export async function createProduct(formData: FormData) {
     return { ok: true, message: "ບັນທຶກສິນຄ້າໃນໂໝດທົດສອບແລ້ວ" };
   }
 
-  await prisma.product.create({ data: payload });
+  await prisma.product.create({ data: { ...payload, imageUrl } });
   revalidatePath("/products");
   revalidatePath("/dashboard");
   revalidatePath("/stock-alerts");
@@ -151,19 +166,33 @@ export async function createProduct(formData: FormData) {
   return { ok: true, message: "ເພີ່ມສິນຄ້າສໍາເລັດ" };
 }
 
-export async function submitCreateProduct(formData: FormData): Promise<void> {
+export async function submitCreateProduct(
+  _state: ProductFormState,
+  formData: FormData
+): Promise<ProductFormState> {
   const result = await createProduct(formData);
 
   if (result.ok) {
     redirect("/products");
   }
+  return result;
 }
 
 async function saveProductImage(value: FormDataEntryValue | null) {
   return saveUploadedImage(value, {
     folder: "products",
-    fileNamePrefix: "product"
+    fileNamePrefix: "product",
+    compressToWebp: true
   });
+}
+
+function validateExpiryFields(formData: FormData) {
+  try {
+    formData.getAll("variantExpiryDate").forEach(parseExpiryDate);
+    return null;
+  } catch {
+    return "ວັນໝົດອາຍຸບໍ່ຖືກຕ້ອງ ກະລຸນາເລືອກວັນໃໝ່";
+  }
 }
 
 function parseProductVariants(formData: FormData): ProductVariant[] {
@@ -174,6 +203,7 @@ function parseProductVariants(formData: FormData): ProductVariant[] {
   const prices = formData.getAll("variantSellPrice");
   const stocks = formData.getAll("variantStock");
   const alerts = formData.getAll("variantLowStockAlert");
+  const expiryDates = formData.getAll("variantExpiryDate");
 
   return names
     .map((name, index) => ({
@@ -184,12 +214,14 @@ function parseProductVariants(formData: FormData): ProductVariant[] {
       costPrice: Number(costs[index] ?? 0),
       sellPrice: Number(prices[index] ?? 0),
       stock: Number(stocks[index] ?? 0),
-      lowStockAlert: Number(alerts[index] ?? 0)
+      lowStockAlert: Number(alerts[index] ?? 0),
+      expiryDate: parseExpiryDate(expiryDates[index])
     }))
     .filter((variant) => variant.name && variant.sku);
 }
 
 export async function updateProductStock(productId: string, quantity: number) {
+  await requireOwner();
   if (!hasDatabase) {
     await updateLocalStore((store) => ({
       ...store,
@@ -227,6 +259,7 @@ export async function updateProductStock(productId: string, quantity: number) {
 }
 
 export async function updateProductVariantStock(formData: FormData): Promise<void> {
+  await requireOwner();
   const productId = String(formData.get("productId") ?? "");
   const variantId = String(formData.get("variantId") ?? "");
   const quantity = Number(formData.get("quantity") ?? 0);
@@ -290,16 +323,20 @@ export async function updateProductVariantStock(formData: FormData): Promise<voi
   revalidatePath("/alerts");
 }
 
-export async function updateProductInfo(formData: FormData): Promise<void> {
+export async function updateProductInfo(
+  _state: ProductFormState,
+  formData: FormData
+): Promise<ProductFormState> {
+  await requireOwner();
+  const expiryError = validateExpiryFields(formData);
+  if (expiryError) return { ok: false, message: expiryError };
   const productId = String(formData.get("productId") ?? "");
   const currentImageUrl = String(formData.get("currentImageUrl") ?? "").trim() || null;
-  const uploadedImageUrl = await saveProductImage(formData.get("productImage"));
   const variants = parseExistingProductVariants(formData);
   const firstVariant = variants[0];
   const payload = {
     name: String(formData.get("name") ?? "").trim(),
     category: String(formData.get("category") ?? "").trim(),
-    imageUrl: uploadedImageUrl ?? currentImageUrl,
     isActive: formData.get("isActive") === "on",
     variants,
     sku: firstVariant?.sku ?? "",
@@ -310,21 +347,29 @@ export async function updateProductInfo(formData: FormData): Promise<void> {
   };
 
   if (!productId || !payload.name || !payload.category || !payload.sku) {
-    return;
+    return { ok: false, message: "ກະລຸນາປ້ອນຊື່ ໝວດໝູ່ ແລະ SKU ໃຫ້ຄົບ" };
   }
 
   if (variants.some((variant) => variant.sellPrice < variant.costPrice)) {
-    return;
+    return { ok: false, message: "ລາຄາຂາຍຕ້ອງບໍ່ຕໍ່າກວ່າຕົ້ນທຶນ" };
   }
 
   if (hasDuplicateVariantSku(variants)) {
-    return;
+    return { ok: false, message: "SKU / Barcode ຊ້ຳກັນໃນຟອມ" };
   }
 
   const conflictingSku = await findExistingSkuConflict(variants, productId);
 
   if (conflictingSku) {
-    return;
+    return { ok: false, message: `SKU / Barcode ${conflictingSku} ມີແລ້ວ` };
+  }
+
+  let imageUrl: string | null;
+  try {
+    imageUrl = (await saveProductImage(formData.get("productImage"))) ?? currentImageUrl;
+  } catch (error) {
+    if (error instanceof ProductImageError) return { ok: false, message: error.message };
+    throw error;
   }
 
   if (!hasDatabase) {
@@ -335,6 +380,7 @@ export async function updateProductInfo(formData: FormData): Promise<void> {
           ? {
               ...product,
               ...payload,
+              imageUrl,
               updatedAt: new Date()
             }
           : product
@@ -344,20 +390,26 @@ export async function updateProductInfo(formData: FormData): Promise<void> {
     revalidatePath("/products");
     revalidatePath("/products/new");
     revalidatePath("/dashboard");
-    return;
+    revalidatePath("/alerts");
+    revalidatePath("/stock-alerts");
+    return { ok: true, message: "ບັນທຶກການແກ້ໄຂແລ້ວ" };
   }
 
   await prisma.product.update({
     where: { id: productId },
-    data: payload
+    data: { ...payload, imageUrl }
   });
 
   revalidatePath("/products");
   revalidatePath("/products/new");
   revalidatePath("/dashboard");
+  revalidatePath("/alerts");
+  revalidatePath("/stock-alerts");
+  return { ok: true, message: "ບັນທຶກການແກ້ໄຂແລ້ວ" };
 }
 
 export async function deleteProduct(productId: string) {
+  await requireOwner();
   if (!hasDatabase) {
     await updateLocalStore((store) => ({
       ...store,
@@ -391,6 +443,7 @@ function parseExistingProductVariants(formData: FormData): ProductVariant[] {
   const prices = formData.getAll("variantSellPrice");
   const stocks = formData.getAll("variantStock");
   const alerts = formData.getAll("variantLowStockAlert");
+  const expiryDates = formData.getAll("variantExpiryDate");
 
   return names
     .map((name, index) => ({
@@ -401,7 +454,8 @@ function parseExistingProductVariants(formData: FormData): ProductVariant[] {
       costPrice: Number(costs[index] ?? 0),
       sellPrice: Number(prices[index] ?? 0),
       stock: Number(stocks[index] ?? 0),
-      lowStockAlert: Number(alerts[index] ?? 0)
+      lowStockAlert: Number(alerts[index] ?? 0),
+      expiryDate: parseExpiryDate(expiryDates[index])
     }))
     .filter((variant) => variant.name && variant.sku);
 }
