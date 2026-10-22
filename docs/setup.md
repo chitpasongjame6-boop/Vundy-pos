@@ -11,7 +11,7 @@
 bash run.sh
 ```
 
-ลำดับการทำงาน: ตรวจ Git/ไฟล์แก้ไขค้าง → fetch `origin/main` และ fast-forward → `apt-get update` → ติดตั้ง Docker Engine/Compose เมื่อยังไม่มี → เตรียม Node.js 22 ใน image → `npm ci` → สร้าง Prisma Client → `npm run build -- --webpack` → เตรียม MongoDB Replica Set → ตรวจ schema/indexes → `npm start` → ตรวจสุขภาพเว็บ/ฐานข้อมูล → แสดง URL
+ลำดับการทำงาน: ตรวจ Git/ไฟล์แก้ไขค้าง → fetch ตรวจ revision ที่จะอัปเดต → `git pull --ff-only origin main` → `apt-get update` → ติดตั้ง Docker Engine/Compose เมื่อยังไม่มี → เตรียม Node.js 22 ใน image → `npm ci` → สร้าง Prisma Client → `npm run build -- --webpack` → เตรียม MongoDB Replica Set → ตรวจ schema/indexes → `npm start` → ตรวจสุขภาพเว็บ/ฐานข้อมูล → แสดง URL
 ไม่ต้องติดตั้ง Node.js/npm/MongoDB บน host แยกเอง และไม่ต้องรันสคริปต์ด้วย `sudo` (สคริปต์จะขอสิทธิ์เมื่อต้องใช้)
 ไม่มีการ `apt upgrade` ทั้งระบบ, รีบูต, ลบแพ็กเกจที่ชนกัน หรือ reset ฐานข้อมูลโดยอัตโนมัติ
 
@@ -45,6 +45,7 @@ git pull --ff-only origin main && bash run.sh
 - หาก Git ยังไม่ติดตั้ง: `sudo apt-get update && sudo apt-get install -y git`
 - ถ้ามี local edits, staged changes หรือไฟล์ใหม่ที่ยังไม่ติดตาม ให้ตรวจ `git status --short` และเก็บงาน/แก้ความขัดแย้งก่อน ไม่มีการ stash, reset, rebase หรือ clean อัตโนมัติ
 - ไฟล์ส่วนตัวที่ Git ignore เช่น `.env`, `.env.linux.local`, `.local-data` ไม่ขัดขวางการอัปเดต และไม่ถูกเขียนทับ สคริปต์ปฏิเสธ revision ที่เริ่มติดตามเส้นทางส่วนตัวเหล่านี้
+- คำสั่ง pull ปิด rebase/autostash และตั้ง `--no-overwrite-ignore` เฉพาะการ merge รอบนั้น ไม่เปลี่ยน Git config ที่บันทึกไว้ ถ้า remote มี commit ใหม่ระหว่างตรวจและ pull จะหยุดก่อน Build ให้รันซ้ำเพื่อตรวจ revision ใหม่ (ไม่ reset โค้ดกลับ)
 - ถ้า branch มี commit เฉพาะในเครื่อง, ประวัติแยกจาก remote, network/Git authentication ผิดพลาด หรือ merge ไม่สำเร็จ จะหยุดก่อนติดตั้ง ไม่แสดงว่าอัปเดตสำเร็จหรือเริ่ม Build โค้ดเก่าแทน
 - หาก fetch หรือ Build ล้มเหลว แอปที่กำลังทำงานยังไม่ถูกสั่งหยุดในขั้นตอนนั้น โค้ดบนดิสก์อาจอัปเดตแล้วแต่เว็บยังเป็นรุ่นเดิม แก้ error แล้วรันซ้ำ; ไม่มีระบบ rollback แอป/schema อัตโนมัติหากเกิดข้อผิดพลาดในขั้นตอนหลัง
 - โฟลเดอร์ ZIP ไม่มี `.git`: ใช้ `bash run.sh --no-update` เพื่อ Build โค้ดที่มีอยู่ หรือจัดเตรียม Git clone โดยเก็บค่าตั้งค่า/ข้อมูลเดิมอย่างปลอดภัยก่อน ห้ามลบโฟลเดอร์เก่าหรือสร้างฐานข้อมูลใหม่แทนเพื่อแก้ปัญหานี้

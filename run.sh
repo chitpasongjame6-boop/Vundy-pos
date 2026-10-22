@@ -12,7 +12,7 @@ run_usage() {
     'Vundy POS: update source, build and start the local web app.' \
     'Usage: bash run.sh [--no-update] [--lan | --localhost] [--port 3000]' \
     '' \
-    'Default: fetch origin/main and fast-forward a clean main branch first.' \
+    'Default: check source, then git pull --ff-only origin main before build.' \
     'Stops on local edits, local-only commits, missing Git, or network errors.' \
     'Never resets/stashes edits, replaces credentials, or deletes a database.' \
     '--no-update  Build/install the files already here without fetching Git.' \
@@ -54,7 +54,16 @@ update_source() {
         run_die 'The incoming revision tracks private configuration/data paths. Update stopped to protect local files.' ;;
     esac
   done < <(git ls-tree -rz --name-only "$target")
-  git merge --ff-only --no-edit "$target" || run_die 'Fast-forward update failed. Review git status; installation was not started.'
+  run_log 'Running git pull --ff-only origin main...'
+  # Scope merge options to this command only; do not change the user's config.
+  # Pull fetches again, so protect ignored files even if origin/main moves after
+  # the preflight check. Disable configured rebase/autostash behavior explicitly.
+  GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 \
+    GIT_CONFIG_KEY_0=branch.main.mergeOptions GIT_CONFIG_VALUE_0=--no-overwrite-ignore \
+    git pull --ff-only origin main --no-rebase --no-autostash ||
+    run_die 'Git pull failed. Review git status and Git/network access; installation was not started.'
+  [[ "$(git rev-parse HEAD)" == "$target" ]] ||
+    run_die 'origin/main changed during the update. Source may have advanced, but installation was not started. Rerun bash run.sh to check the new revision.'
   run_log "Source ready: $(git rev-parse --short HEAD). Building this revision next."
 }
 

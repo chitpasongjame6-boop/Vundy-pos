@@ -102,6 +102,58 @@ describe.skipIf(!available)("safe source update using real temporary Git reposit
     }
   });
 
+  it("calls git pull explicitly while overriding rebase/autostash only for this command", () => {
+    const f = fixture(), head = publish(f);
+    git(f.checkout, "config", "pull.rebase", "true");
+    git(f.checkout, "config", "merge.autostash", "true");
+    git(f.checkout, "config", "branch.main.mergeOptions", "--overwrite-ignore");
+    const configBefore = readFileSync(join(f.checkout, ".git/config"), "utf8");
+    const result = spawnSync(bash, ["-c",
+      'source "$1"; git() { if [[ "$1" == pull ]]; then printf "%s\\n" "$*" >> .local-data/git-calls; fi; command git "$@"; }; update_source "$2"',
+      "test", shellPath(join(f.checkout, "run.sh")), shellPath(f.checkout)
+    ], { cwd: f.checkout, encoding: "utf8", timeout: 20000 });
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(join(f.checkout, ".local-data/git-calls"), "utf8")).toBe("pull --ff-only origin main --no-rebase --no-autostash\n");
+    expect(git(f.checkout, "rev-parse", "HEAD")).toBe(head);
+    expect(readFileSync(join(f.checkout, ".git/config"), "utf8")).toBe(configBefore);
+    assertPrivateFiles(f);
+  });
+
+  it("stops when pull fails even after a successful preflight fetch", () => {
+    const f = fixture(), before = git(f.checkout, "rev-parse", "HEAD");
+    publish(f);
+    const result = spawnSync(bash, ["-c",
+      'source "$1"; git() { if [[ "$1" == pull ]]; then return 1; fi; command git "$@"; }; update_source "$2"',
+      "test", shellPath(join(f.checkout, "run.sh")), shellPath(f.checkout)
+    ], { cwd: f.checkout, encoding: "utf8", timeout: 20000 });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("Git pull failed");
+    expect(git(f.checkout, "rev-parse", "HEAD")).toBe(before);
+    assertPrivateFiles(f);
+  });
+
+  it.each(["private file", "normal commit"])("handles a remote %s arriving between preflight and pull without unsafe deployment", kind => {
+    const f = fixture(), before = git(f.checkout, "rev-parse", "HEAD");
+    publish(f);
+    if (kind === "private file") {
+      writeFileSync(join(f.publisher, ".env.linux.local"), "unsafe upstream content\n");
+      git(f.publisher, "add", "--force", ".env.linux.local");
+    } else {
+      writeFileSync(join(f.publisher, "product.txt"), "newer product\n");
+      git(f.publisher, "add", "product.txt");
+    }
+    git(f.publisher, "commit", "-m", "arrives during pull");
+    const newer = git(f.publisher, "rev-parse", "HEAD");
+    const result = spawnSync(bash, ["-c",
+      'source "$1"; test_publisher="$3"; git() { if [[ "$1" == pull ]]; then command git -C "$test_publisher" push origin main || return; fi; command git "$@"; }; update_source "$2"',
+      "test", shellPath(join(f.checkout, "run.sh")), shellPath(f.checkout), shellPath(f.publisher)
+    ], { cwd: f.checkout, encoding: "utf8", timeout: 20000 });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(kind === "private file" ? "Git pull failed" : "changed during the update");
+    expect(git(f.checkout, "rev-parse", "HEAD")).toBe(kind === "private file" ? before : newer);
+    assertPrivateFiles(f);
+  });
+
   it.each(["unstaged", "staged", "untracked"])("stops before fetch with %s work and never stashes or resets it", kind => {
     const f = fixture(), before = git(f.checkout, "rev-parse", "HEAD");
     publish(f);
