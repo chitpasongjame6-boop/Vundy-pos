@@ -3,6 +3,7 @@ import { getProducts } from "@/actions/product.action";
 import { getInventoryWorkspace } from "@/actions/inventory.action";
 import { requireOwner } from "@/lib/auth";
 import { getProductVariants } from "@/lib/utils";
+import { RATE_SCALE } from "@/lib/currency";
 
 export async function GET(
   _request: Request,
@@ -47,6 +48,11 @@ async function buildRows(dataset: string): Promise<Array<Record<string, unknown>
       netAmount: sale.netAmount,
       refundAmount: sale.refundAmount ?? 0,
       paymentMethod: sale.paymentMethod,
+      tenderCurrency: sale.tenderCurrency ?? "LAK",
+      receivedBaht: sale.tenderCurrency === "THB" ? (sale.tenderAmountMinor ?? 0) / 100 : "",
+      kipPerBaht: sale.exchangeRate ? sale.exchangeRate / RATE_SCALE : "",
+      receivedKipEquivalent: sale.receivedAmount ?? "",
+      changeKip: sale.changeAmount ?? "",
       paymentReference: sale.paymentReference ?? "",
       taxAmount: sale.taxAmount ?? 0
     })));
@@ -61,10 +67,18 @@ async function buildRows(dataset: string): Promise<Array<Record<string, unknown>
       category: product.category,
       unit: variant.unit ?? "",
       costPrice: variant.costPrice,
+      purchaseCurrency: variant.purchaseCurrency ?? "LAK",
+      purchaseUnitAmount: variant.purchaseCurrency === "THB" ? (variant.purchaseAmountMinor ?? 0) / 100 : variant.purchaseAmountMinor ?? variant.costPrice,
+      purchaseKipPerBaht: variant.purchaseRate ? variant.purchaseRate / RATE_SCALE : "",
       sellPrice: variant.sellPrice,
       stock: variant.stock,
       lowStockAlert: variant.lowStockAlert,
-      active: product.isActive
+      active: product.isActive,
+      catalogSource: product.catalogSource?.sourceUrl ?? "",
+      catalogBarcode: product.catalogSource?.barcode ?? "",
+      catalogRetrievedAt: product.catalogSource?.retrievedAt ?? "",
+      catalogDataLicense: product.catalogSource ? "ODbL 1.0 / Database Contents License" : "",
+      catalogImageLicense: product.catalogSource?.imageImported ? "CC BY-SA 3.0; resized/converted to WebP" : ""
     })));
   }
 
@@ -79,6 +93,10 @@ async function buildRows(dataset: string): Promise<Array<Record<string, unknown>
       quantity: movement.quantity,
       stockBefore: movement.stockBefore,
       stockAfter: movement.stockAfter,
+      unitCostKip: movement.unitCost ?? "",
+      purchaseCurrency: movement.purchaseCurrency ?? "",
+      purchaseUnitAmount: movement.purchaseCurrency === "THB" ? (movement.purchaseAmountMinor ?? 0) / 100 : movement.purchaseAmountMinor ?? "",
+      purchaseKipPerBaht: movement.purchaseRate ? movement.purchaseRate / RATE_SCALE : "",
       reference: movement.referenceNo ?? "",
       reason: movement.reason ?? "",
       user: movement.userName
@@ -98,6 +116,8 @@ function toCsv(rows: Array<Record<string, unknown>>) {
 }
 
 function escapeCsv(value: unknown) {
-  const text = value == null ? "" : String(value);
+  let text = value == null ? "" : String(value);
+  // Catalog/user text must not become an executable spreadsheet formula.
+  if (typeof value === "string" && /^[\s\uFEFF]*[=+@\-\t\r\n]/.test(text)) text = `'${text}`;
   return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }

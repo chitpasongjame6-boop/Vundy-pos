@@ -61,6 +61,7 @@ export type Product = {
   stock: number;
   lowStockAlert: number;
   imageUrl?: string | null;
+  catalogSource?: import("@/lib/product-catalog").CatalogAttribution | null;
   isActive: boolean;
   variants?: ProductVariant[];
   createdAt: Date;
@@ -77,6 +78,9 @@ export type ProductVariant = {
   stock: number;
   lowStockAlert: number;
   expiryDate?: string | null;
+  purchaseCurrency?: "LAK" | "THB" | null;
+  purchaseAmountMinor?: number | null;
+  purchaseRate?: number | null;
 };
 
 export type ProductFormState = {
@@ -178,6 +182,9 @@ export type Sale = {
   paymentReference?: string | null;
   receivedAmount?: number | null;
   changeAmount?: number | null;
+  tenderCurrency?: "LAK" | "THB" | null;
+  tenderAmountMinor?: number | null;
+  exchangeRate?: number | null;
   taxRate?: number;
   taxAmount?: number;
   refundAmount?: number;
@@ -254,6 +261,10 @@ export type DailyClosing = {
   profit: number;
   countedCash: number;
   cashDifference: number;
+  physicalCashLak?: number | null;
+  cashThb?: number | null;
+  countedThb?: number | null;
+  differenceThb?: number | null;
   note?: string | null;
   closedById?: string | null;
   closedByName?: string | null;
@@ -296,6 +307,10 @@ export type CashShift = {
   cashierName: string;
   status: ShiftStatus;
   openingCash: number;
+  openingThb?: number | null;
+  expectedThb?: number | null;
+  countedThb?: number | null;
+  differenceThb?: number | null;
   expectedCash?: number | null;
   countedCash?: number | null;
   cashDifference?: number | null;
@@ -313,6 +328,9 @@ export type CashMovement = {
   shiftId: string;
   type: CashMovementType;
   amount: number;
+  currency?: "LAK" | "THB" | null;
+  source?: string | null;
+  referenceId?: string | null;
   reason: string;
   note?: string | null;
   userId: string;
@@ -348,6 +366,9 @@ export type StockMovement = {
   stockBefore: number;
   stockAfter: number;
   unitCost?: number | null;
+  purchaseCurrency?: "LAK" | "THB" | null;
+  purchaseAmountMinor?: number | null;
+  purchaseRate?: number | null;
   referenceType?: string | null;
   referenceId?: string | null;
   referenceNo?: string | null;
@@ -396,6 +417,9 @@ export type PurchaseOrderItem = {
   quantityOrdered: number;
   quantityReceived: number;
   unitCost: number;
+  purchaseCurrency?: "LAK" | "THB" | null;
+  purchaseAmountMinor?: number | null;
+  purchaseRate?: number | null;
 };
 
 export type PurchaseOrder = {
@@ -509,4 +533,7 @@ export type StoreSettings = {
   defaultRegisterName: string;
   staffMaxDiscountPercent: number;
   requireShiftForSale: boolean;
+  thbEnabled?: boolean;
+  thbPaymentRate?: number;
+  thbPurchaseRate?: number;
 };

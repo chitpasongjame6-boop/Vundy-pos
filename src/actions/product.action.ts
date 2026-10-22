@@ -6,11 +6,14 @@ import { prisma } from "@/lib/prisma";
 import { readLocalStore, updateLocalStore } from "@/lib/local-store";
 import { saveUploadedImage } from "@/lib/object-storage";
 import { ProductImageError } from "@/lib/product-image";
+import { downloadCatalogImage, verifyCatalogProduct } from "@/lib/product-catalog.server";
+import type { CatalogAttribution } from "@/lib/product-catalog";
 import { parseExpiryDate } from "@/lib/product-expiry";
+import { moneyInteger, parsePurchaseCost } from "@/lib/currency";
 import { getProductVariants } from "@/lib/utils";
 import { getCategories } from "@/actions/settings.action";
 import { requireAuthenticatedUser, requireOwner } from "@/lib/auth";
-import type { Product, ProductVariant, ProductFormState } from "@/types";
+import type { Product, ProductVariant, ProductFormState, StockMovement } from "@/types";
 
 const hasDatabase = Boolean(process.env.DATABASE_URL);
 
@@ -20,7 +23,9 @@ export async function getProducts(filters?: {
   activeOnly?: boolean;
   limit?: number;
 }) {
-  await requireAuthenticatedUser();
+  const user = await requireAuthenticatedUser();
+  const visible = (products: Product[]) => user?.role === "STAFF" ? products.map(product => ({ ...product, costPrice: 0,
+    variants: product.variants?.map(variant => ({ ...variant, costPrice: 0, purchaseCurrency: null, purchaseAmountMinor: null, purchaseRate: null })) })) : products;
   const limit = normalizeLimit(filters?.limit);
 
   if (!hasDatabase) {
@@ -43,7 +48,7 @@ export async function getProducts(filters?: {
       return matchesSearch && matchesCategory && matchesActive;
     });
 
-    return limit ? filtered.slice(0, limit) : filtered;
+    return visible(limit ? filtered.slice(0, limit) : filtered);
   }
 
   const products = (await prisma.product.findMany({
@@ -58,7 +63,7 @@ export async function getProducts(filters?: {
   const search = filters?.search?.toLowerCase().trim();
 
   if (!search) {
-    return products;
+    return visible(products);
   }
 
   const filteredProducts = products.filter(
@@ -70,7 +75,7 @@ export async function getProducts(filters?: {
       )
   );
 
-  return limit ? filteredProducts.slice(0, limit) : filteredProducts;
+  return visible(limit ? filteredProducts.slice(0, limit) : filteredProducts);
 }
 
 function normalizeLimit(value?: number) {
@@ -87,10 +92,12 @@ export async function getProductCategories() {
 }
 
 export async function createProduct(formData: FormData) {
-  await requireOwner();
+  const owner = await requireOwner();
   const expiryError = validateExpiryFields(formData);
   if (expiryError) return { ok: false, message: expiryError };
-  const variants = parseProductVariants(formData);
+  let variants: ProductVariant[];
+  try { variants = parseProductVariants(formData); }
+  catch (error) { return { ok: false, message: error instanceof Error ? error.message : "ຕົ້ນທຶນບໍ່ຖືກຕ້ອງ" }; }
   const firstVariant = variants[0];
   const payload = {
     name: String(formData.get("name") ?? "").trim(),
@@ -123,8 +130,22 @@ export async function createProduct(formData: FormData) {
   }
 
   let imageUrl: string | null;
+  let catalogSource: CatalogAttribution | undefined;
   try {
-    imageUrl = await saveProductImage(formData.get("productImage"));
+    const token = String(formData.get("catalogToken") ?? "");
+    const catalog = token ? verifyCatalogProduct(token) : null;
+    if (catalog && catalog.barcode !== firstVariant.sku) {
+      return { ok: false, message: "Barcode ປ່ຽນແລ້ວ ກະລຸນາຍົກເລີກຂໍ້ມູນທີ່ດຶງມາ ແລະ ຄົ້ນຫາໃໝ່" };
+    }
+    const upload = formData.get("productImage");
+    const hasUpload = upload instanceof File && upload.size > 0;
+    const imageImported = Boolean(catalog?.imageUrl && !hasUpload && formData.get("catalogUseImage") === "on");
+    const image = catalog && imageImported ? await downloadCatalogImage(catalog) : upload;
+    imageUrl = await saveProductImage(image);
+    if (catalog) catalogSource = {
+      provider: catalog.provider, barcode: catalog.barcode, sourceUrl: catalog.sourceUrl,
+      retrievedAt: catalog.retrievedAt, imageImported
+    };
   } catch (error) {
     if (error instanceof ProductImageError) return { ok: false, message: error.message };
     throw error;
@@ -136,6 +157,7 @@ export async function createProduct(formData: FormData) {
       id: crypto.randomUUID(),
       ...payload,
       imageUrl,
+      catalogSource,
       createdAt: now,
       updatedAt: now
     };
@@ -143,6 +165,7 @@ export async function createProduct(formData: FormData) {
     await updateLocalStore((store) => ({
       ...store,
       products: [product, ...store.products],
+      stockMovements: [...openingMovements(product, owner), ...(store.stockMovements ?? [])],
       categories: [...new Set([...store.categories, product.category])]
     }));
 
@@ -156,8 +179,14 @@ export async function createProduct(formData: FormData) {
     return { ok: true, message: "ບັນທຶກສິນຄ້າໃນໂໝດທົດສອບແລ້ວ" };
   }
 
-  await prisma.product.create({ data: { ...payload, imageUrl } });
+  await prisma.$transaction(async tx => {
+    const product = await tx.product.create({ data: { ...payload, imageUrl, catalogSource } }) as unknown as Product;
+    await tx.category.upsert({ where: { name: payload.category }, update: { isActive: true }, create: { name: payload.category } });
+    const movements = openingMovements(product, owner).map(movement => ({ ...movement, id: undefined }));
+    if (movements.length) await tx.stockMovement.createMany({ data: movements });
+  });
   revalidatePath("/products");
+  revalidatePath("/products/new");
   revalidatePath("/dashboard");
   revalidatePath("/stock-alerts");
   revalidatePath("/alerts");
@@ -200,6 +229,9 @@ function parseProductVariants(formData: FormData): ProductVariant[] {
   const skus = formData.getAll("variantSku").map((value) => String(value).trim());
   const units = formData.getAll("variantUnit").map((value) => String(value).trim());
   const costs = formData.getAll("variantCostPrice");
+  const currencies = formData.getAll("variantCostCurrency");
+  const amounts = formData.getAll("variantCostAmount");
+  const rates = formData.getAll("variantCostRate");
   const prices = formData.getAll("variantSellPrice");
   const stocks = formData.getAll("variantStock");
   const alerts = formData.getAll("variantLowStockAlert");
@@ -211,10 +243,10 @@ function parseProductVariants(formData: FormData): ProductVariant[] {
       name,
       sku: skus[index] || "",
       unit: units[index] || null,
-      costPrice: Number(costs[index] ?? 0),
-      sellPrice: Number(prices[index] ?? 0),
-      stock: Number(stocks[index] ?? 0),
-      lowStockAlert: Number(alerts[index] ?? 0),
+      ...parsePurchaseCost(currencies[index], amounts[index] ?? costs[index] ?? 0, rates[index]),
+      sellPrice: moneyInteger(Number(prices[index] ?? 0)),
+      stock: moneyInteger(Number(stocks[index] ?? 0)),
+      lowStockAlert: moneyInteger(Number(alerts[index] ?? 0)),
       expiryDate: parseExpiryDate(expiryDates[index])
     }))
     .filter((variant) => variant.name && variant.sku);
@@ -332,7 +364,21 @@ export async function updateProductInfo(
   if (expiryError) return { ok: false, message: expiryError };
   const productId = String(formData.get("productId") ?? "");
   const currentImageUrl = String(formData.get("currentImageUrl") ?? "").trim() || null;
-  const variants = parseExistingProductVariants(formData);
+  let variants: ProductVariant[];
+  try { variants = parseExistingProductVariants(formData); }
+  catch (error) { return { ok: false, message: error instanceof Error ? error.message : "ຈໍານວນບໍ່ຖືກຕ້ອງ" }; }
+  // Editing labels/prices must not drop the purchase snapshot or replace the
+  // weighted-average cost with the most recent purchase price.
+  const original = hasDatabase
+    ? await prisma.product.findUnique({ where: { id: productId } }) as unknown as Product | null
+    : (await readLocalStore()).products.find(product => product.id === productId);
+  if (!original) return { ok: false, message: "ບໍ່ພົບສິນຄ້າ" };
+  variants = variants.map(variant => {
+    const old = getProductVariants(original).find(item => item.id === variant.id);
+    return old && old.costPrice === variant.costPrice
+      ? { ...variant, purchaseCurrency: old.purchaseCurrency, purchaseAmountMinor: old.purchaseAmountMinor, purchaseRate: old.purchaseRate }
+      : { ...variant, purchaseCurrency: "LAK", purchaseAmountMinor: variant.costPrice, purchaseRate: null };
+  });
   const firstVariant = variants[0];
   const payload = {
     name: String(formData.get("name") ?? "").trim(),
@@ -372,6 +418,10 @@ export async function updateProductInfo(
     throw error;
   }
 
+  const uploadedImage = formData.get("productImage");
+  const catalogSource = original.catalogSource && uploadedImage instanceof File && uploadedImage.size > 0
+    ? { ...original.catalogSource, imageImported: false } : original.catalogSource;
+
   if (!hasDatabase) {
     await updateLocalStore((store) => ({
       ...store,
@@ -381,6 +431,7 @@ export async function updateProductInfo(
               ...product,
               ...payload,
               imageUrl,
+              catalogSource,
               updatedAt: new Date()
             }
           : product
@@ -397,7 +448,7 @@ export async function updateProductInfo(
 
   await prisma.product.update({
     where: { id: productId },
-    data: { ...payload, imageUrl }
+    data: { ...payload, imageUrl, catalogSource }
   });
 
   revalidatePath("/products");
@@ -451,10 +502,10 @@ function parseExistingProductVariants(formData: FormData): ProductVariant[] {
       name,
       sku: skus[index] || "",
       unit: units[index] || null,
-      costPrice: Number(costs[index] ?? 0),
-      sellPrice: Number(prices[index] ?? 0),
-      stock: Number(stocks[index] ?? 0),
-      lowStockAlert: Number(alerts[index] ?? 0),
+      costPrice: moneyInteger(Number(costs[index] ?? 0)),
+      sellPrice: moneyInteger(Number(prices[index] ?? 0)),
+      stock: moneyInteger(Number(stocks[index] ?? 0)),
+      lowStockAlert: moneyInteger(Number(alerts[index] ?? 0)),
       expiryDate: parseExpiryDate(expiryDates[index])
     }))
     .filter((variant) => variant.name && variant.sku);
@@ -462,6 +513,18 @@ function parseExistingProductVariants(formData: FormData): ProductVariant[] {
 
 function normalizeSku(sku: string) {
   return sku.trim().toLowerCase();
+}
+
+function openingMovements(product: Product, owner: { id: string; name: string }): StockMovement[] {
+  return getProductVariants(product).filter(variant => variant.stock > 0).map(variant => ({
+    id: crypto.randomUUID(), productId: product.id, variantId: variant.id,
+    sku: variant.sku, productName: product.name, variantName: variant.name,
+    type: "OPENING", quantity: variant.stock, stockBefore: 0, stockAfter: variant.stock,
+    unitCost: variant.costPrice, purchaseCurrency: variant.purchaseCurrency,
+    purchaseAmountMinor: variant.purchaseAmountMinor, purchaseRate: variant.purchaseRate,
+    referenceType: "PRODUCT", referenceId: product.id, reason: "ສະຕ໋ອກເລີ່ມຕົ້ນ",
+    userId: owner.id, userName: owner.name, createdAt: product.createdAt
+  }));
 }
 
 function hasDuplicateVariantSku(variants: ProductVariant[]) {

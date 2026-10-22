@@ -13,13 +13,12 @@ import { MoneyInput } from "@/components/ui/money-input";
 import { MetricCard } from "@/components/ui/patterns";
 import { getCurrentUser } from "@/lib/auth";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatThb } from "@/lib/currency";
+import { movementBalance } from "@/lib/cash-currency";
 
 export default async function PosShiftsPage() {
   const [workspace, user] = await Promise.all([getShiftWorkspace(), getCurrentUser()]);
-  const movementTotal = workspace.movements.reduce(
-    (sum, item) => sum + (item.type === "CASH_IN" ? item.amount : -item.amount),
-    0
-  );
+  const movementTotal = movementBalance(workspace.movements, "LAK");
 
   return (
     <section>
@@ -44,6 +43,11 @@ export default async function PosShiftsPage() {
             <MetricCard icon={Banknote} label="ເງິນທີ່ຄວນມີ" value={formatCurrency(workspace.expectedCash)} tone="emerald" />
           </div>
 
+          <div className="mb-4 flex flex-wrap gap-5 rounded-xl border border-indigo-100 bg-indigo-50 p-4 text-sm">
+            <span>ເງິນບາດເປີດກະ: <strong>{formatThb(workspace.current.openingThb ?? 0)}</strong></span>
+            <span>ເງິນບາດທີ່ຄວນມີ: <strong>{formatThb(workspace.expectedThb)}</strong></span>
+            <span className="text-slate-600">ນັບແຍກສະກຸນເງິນ · ບໍ່ໃຊ້ເຣດປ່ຽນຍອດລິ້ນຊັກ</span>
+          </div>
           <div className="grid gap-4 xl:grid-cols-2">
             <Card>
               <CardHeader><CardTitle>ເງິນເຂົ້າ / ເງິນອອກ</CardTitle></CardHeader>
@@ -54,7 +58,8 @@ export default async function PosShiftsPage() {
                     <option value="CASH_IN">ເງິນເຂົ້າລິ້ນຊັກ</option>
                     <option value="CASH_OUT">ເງິນອອກຈາກລິ້ນຊັກ</option>
                   </Select>
-                  <MoneyInput name="amount" min={1} placeholder="ຈໍານວນເງິນ" required />
+                  <Select name="currency" defaultValue="LAK" aria-label="ສະກຸນເງິນ"><option value="LAK">ກີບ (LAK)</option><option value="THB">ບາດ (THB)</option></Select>
+                  <Input name="amount" type="number" min="0.01" step="0.01" placeholder="ຈໍານວນເງິນຕາມສະກຸນ" required />
                   <Input name="reason" placeholder="ເຫດຜົນ" required />
                   <Input name="note" placeholder="ໝາຍເຫດ (ຖ້າມີ)" />
                   <Button type="submit" className="sm:col-span-2">ບັນທຶກເງິນເຂົ້າ/ອອກ</Button>
@@ -67,7 +72,7 @@ export default async function PosShiftsPage() {
                         <p className="text-xs text-slate-500">{formatDate(new Date(item.createdAt))} · {item.userName}</p>
                       </div>
                       <p className={item.type === "CASH_IN" ? "font-bold text-emerald-700" : "font-bold text-rose-700"}>
-                        {item.type === "CASH_IN" ? "+" : "-"}{formatCurrency(item.amount)}
+                        {item.type === "CASH_IN" ? "+" : "-"}{item.currency === "THB" ? formatThb(item.amount) : formatCurrency(item.amount)}
                       </p>
                     </div>
                   )) : <p className="text-sm text-slate-500">ຍັງບໍ່ມີເງິນເຂົ້າ/ອອກໃນກະນີ້</p>}
@@ -82,7 +87,10 @@ export default async function PosShiftsPage() {
                   <input type="hidden" name="shiftId" value={workspace.current.id} />
                   <label className="space-y-1.5">
                     <span className="text-sm font-semibold text-slate-700">ເງິນສົດທີ່ນັບໄດ້</span>
-                    <MoneyInput name="countedCash" min={0} defaultValue={workspace.expectedCash} required />
+                    <MoneyInput name="countedCash" min={0} defaultValue={Math.max(0, workspace.expectedCash)} required />
+                  </label>
+                  <label className="space-y-1.5 text-sm font-semibold">ເງິນບາດທີ່ນັບໄດ້ຈິງ
+                    <Input name="countedThb" type="number" min="0" step="0.01" defaultValue={Math.max(0, workspace.expectedThb) / 100} required />
                   </label>
                   <Textarea name="note" placeholder="ໝາຍເຫດການປິດກະ" />
                   {user?.role === "STAFF" ? (
@@ -118,6 +126,9 @@ export default async function PosShiftsPage() {
                 <span className="text-sm font-semibold text-slate-700">ເງິນສົດເລີ່ມຕົ້ນ</span>
                 <MoneyInput name="openingCash" min={0} defaultValue={0} required />
               </label>
+              <label className="space-y-1.5 text-sm font-semibold">ເງິນບາດເລີ່ມຕົ້ນ (ບໍ່ມີໃສ່ 0)
+                <Input name="openingThb" type="number" min="0" step="0.01" defaultValue="0" required />
+              </label>
               <Button type="submit">ເປີດກະຂາຍ</Button>
             </form>
           </CardContent>
@@ -133,9 +144,9 @@ export default async function PosShiftsPage() {
               <tr key={shift.id} className="border-b border-slate-100">
                 <td className="p-2 font-semibold">{shift.shiftNo}</td><td className="p-2">{shift.cashierName}</td>
                 <td className="p-2">{formatDate(new Date(shift.openedAt))}</td>
-                <td className="p-2">{formatCurrency(shift.expectedCash ?? 0)}</td>
-                <td className="p-2">{formatCurrency(shift.countedCash ?? 0)}</td>
-                <td className="p-2">{formatCurrency(shift.cashDifference ?? 0)}</td>
+                <td className="p-2">{formatCurrency(shift.expectedCash ?? 0)}<div className="text-xs text-slate-500">{formatThb(shift.expectedThb ?? 0)}</div></td>
+                <td className="p-2">{formatCurrency(shift.countedCash ?? 0)}<div className="text-xs text-slate-500">{formatThb(shift.countedThb ?? 0)}</div></td>
+                <td className="p-2">{formatCurrency(shift.cashDifference ?? 0)}<div className="text-xs text-slate-500">{formatThb(shift.differenceThb ?? 0)}</div></td>
                 <td className="p-2 font-semibold">{shift.status === "OPEN" ? "ເປີດ" : "ປິດແລ້ວ"}</td>
               </tr>
             ))}</tbody>

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { readLocalStore, updateLocalStore } from "@/lib/local-store";
-import { buildClosingNumber, buildReadableNumber, formatDateInput } from "@/lib/document-number";
+import { buildClosingNumber, buildReadableNumber, formatLaoDateInput } from "@/lib/document-number";
 import { requireAuthenticatedUser } from "@/lib/auth";
 import { verifyOwnerApproval } from "@/lib/approval";
 import {
@@ -15,6 +15,8 @@ import {
 import { buildMemberSummaries } from "@/lib/members";
 import { getPricingKey, getPromotionDiscount, resolvePromotionPrice } from "@/lib/promotions";
 import { calculateSaleRefund } from "@/lib/sales";
+import { averageCost, CurrencyError, moneyInteger, parseDecimal } from "@/lib/currency";
+import { movementBalance, resolveThbTender, thbRefundMovement, thbSaleMovements } from "@/lib/cash-currency";
 import {
   calculateOrderTotals,
   formatProductVariantName,
@@ -23,6 +25,8 @@ import {
 } from "@/lib/utils";
 import type {
   DailyClosing,
+  CashMovement,
+  CashShift,
   Member,
   MemberTier,
   PosPaymentSummary,
@@ -51,6 +55,9 @@ type PosSaleInput = {
   expectedNetAmount?: number;
   paymentMethod?: SalePaymentMethod;
   receivedAmount?: number;
+  tenderCurrency?: "LAK" | "THB";
+  tenderAmountMinor?: number;
+  expectedExchangeRate?: number;
   memberId?: string;
   paymentReference?: string;
   payments?: SalePayment[];
@@ -247,6 +254,18 @@ function summarizeSales(sales: Sale[]): PosPaymentSummary {
   );
 }
 
+export async function submitVoidPosSale(_state: { message: string }, formData: FormData): Promise<{ message: string }> {
+  await requireAuthenticatedUser();
+  try { await voidPosSale(formData); return { message: "" }; }
+  catch (error) { return { message: error instanceof CurrencyError ? error.message : "ບັນທຶກບໍ່ສໍາເລັດ ກະລຸນາໂຫຼດໜ້າໃໝ່ ແລະ ກວດສະຖານະບິນກ່ອນລອງອີກຄັ້ງ" }; }
+}
+
+export async function submitReturnPosSaleItems(_state: { message: string }, formData: FormData): Promise<{ message: string }> {
+  await requireAuthenticatedUser();
+  try { await returnPosSaleItems(formData); return { message: "" }; }
+  catch (error) { return { message: error instanceof CurrencyError ? error.message : "ບັນທຶກບໍ່ສໍາເລັດ ກະລຸນາໂຫຼດໜ້າໃໝ່ ແລະ ກວດສະຖານະບິນກ່ອນລອງອີກຄັ້ງ" }; }
+}
+
 export async function voidPosSale(formData: FormData): Promise<void> {
   const currentUser = await requireAuthenticatedUser();
   const saleId = String(formData.get("saleId") ?? "");
@@ -272,8 +291,12 @@ export async function voidPosSale(formData: FormData): Promise<void> {
         return store;
       }
 
+      const refundMovements = thbRefundMovement(sale, sale.netAmount,
+        store.cashShifts.find(shift => shift.cashierId === currentUser.id && shift.status === "OPEN"), currentUser, now);
+
       return {
         ...store,
+        cashMovements: [...refundMovements, ...store.cashMovements],
         sales: store.sales.map((item) =>
           item.id === saleId
             ? {
@@ -334,6 +357,14 @@ export async function voidPosSale(formData: FormData): Promise<void> {
 
     if (!sale || !isFullyActiveSale(sale)) {
       return;
+    }
+
+    if (sale.tenderCurrency === "THB") {
+      const shift = await tx.cashShift.findFirst({ where: { cashierId: currentUser.id, status: "OPEN" } }) as unknown as CashShift | null;
+      for (const movement of thbRefundMovement(sale, sale.netAmount, shift, currentUser, now)) {
+        await tx.cashShift.update({ where: { id: movement.shiftId, status: "OPEN" }, data: { updatedAt: now } });
+        await tx.cashMovement.create({ data: { ...movement, id: undefined } });
+      }
     }
 
     await restockSaleItemsInDatabase(tx, sale.items, {
@@ -405,6 +436,9 @@ export async function returnPosSaleItems(formData: FormData): Promise<void> {
 
       const now = new Date();
       const refundAmount = calculateRefundAmount(sale, returnItems);
+      if (sale.tenderCurrency === "THB" && refundMethod !== "CASH") throw new Error("ບິນຮັບບາດ ຄືນເງິນເປັນເງິນສົດກີບເທົ່ານັ້ນ");
+      const refundMovements = thbRefundMovement(sale, refundAmount,
+        store.cashShifts.find(shift => shift.cashierId === currentUser.id && shift.status === "OPEN"), currentUser, now);
       const returnedCost = returnItems.reduce(
         (sum, item) => sum + item.cost * item.quantity,
         0
@@ -450,6 +484,7 @@ export async function returnPosSaleItems(formData: FormData): Promise<void> {
         ),
         products: restockProducts(store.products, returnItems, now),
         saleReturns: [saleReturn, ...(store.saleReturns ?? [])],
+        cashMovements: [...refundMovements, ...store.cashMovements],
         stockMovements: [
           ...buildLocalRestockMovements(store.products, returnItems, {
             type: reason === "ປ່ຽນສິນຄ້າ" ? "EXCHANGE" : "SALE_RETURN",
@@ -499,6 +534,14 @@ export async function returnPosSaleItems(formData: FormData): Promise<void> {
 
     const now = new Date();
     const refundAmount = calculateRefundAmount(sale, returnItems);
+    if (sale.tenderCurrency === "THB") {
+      if (refundMethod !== "CASH") throw new Error("ບິນຮັບບາດ ຄືນເງິນເປັນເງິນສົດກີບເທົ່ານັ້ນ");
+      const shift = await tx.cashShift.findFirst({ where: { cashierId: currentUser.id, status: "OPEN" } }) as unknown as CashShift | null;
+      for (const movement of thbRefundMovement(sale, refundAmount, shift, currentUser, now)) {
+        await tx.cashShift.update({ where: { id: movement.shiftId, status: "OPEN" }, data: { updatedAt: now } });
+        await tx.cashMovement.create({ data: { ...movement, id: undefined } });
+      }
+    }
     const returnedCost = returnItems.reduce(
       (sum, item) => sum + item.cost * item.quantity,
       0
@@ -580,8 +623,10 @@ export async function getDailyClosing(dateValue?: string): Promise<{
   date: string;
   summary: PosPaymentSummary;
   closing: DailyClosing | null;
+  physicalCashLak: number;
+  cashThb: number;
 }> {
-  const date = dateValue || formatDateInput(new Date());
+  const date = dateValue && getDateRange(dateValue) ? dateValue : formatLaoDateInput(new Date());
   const dateRange = getDateRange(date);
   const sales = (await getSales()).filter((sale) =>
     dateRange ? sale.createdAt >= dateRange.start && sale.createdAt < dateRange.end : true
@@ -594,9 +639,16 @@ export async function getDailyClosing(dateValue?: string): Promise<{
       })) as unknown as DailyClosing | null)
     : (await readLocalStore()).dailyClosings.find((item) => item.date === date) ?? null;
 
+  const currencyMovements = hasDatabase
+    ? await prisma.cashMovement.findMany({ where: { source: { in: ["THB_SALE", "THB_CHANGE", "THB_REFUND"] },
+        createdAt: dateRange ? { gte: dateRange.start, lt: dateRange.end } : undefined } }) as unknown as CashMovement[]
+    : (await readLocalStore()).cashMovements.filter(m => m.source?.startsWith("THB_") && (!dateRange || (m.createdAt >= dateRange.start && m.createdAt < dateRange.end)));
+
   return {
     date,
     summary: summarizeSales(sales),
+    physicalCashLak: summarizeSales(sales.filter(sale => sale.tenderCurrency !== "THB")).cashAmount + movementBalance(currencyMovements, "LAK"),
+    cashThb: movementBalance(currencyMovements, "THB"),
     closing
   };
 }
@@ -627,10 +679,13 @@ export async function closeDailySales(formData: FormData): Promise<void> {
   if (!approval) {
     return;
   }
-  const date = String(formData.get("date") ?? "") || formatDateInput(new Date());
-  const countedCash = Math.max(0, Math.round(Number(formData.get("countedCash") ?? 0)));
+  const date = String(formData.get("date") ?? "") || formatLaoDateInput(new Date());
+  if (!getDateRange(date)) throw new Error("ວັນທີປິດຍອດບໍ່ຖືກຕ້ອງ");
+  const countedCash = Number(formData.get("countedCash") ?? 0);
+  moneyInteger(Math.abs(countedCash));
+  const countedThb = parseDecimal(formData.get("countedThb") || "0", 2);
   const note = String(formData.get("note") ?? "").trim() || null;
-  const { summary } = await getDailyClosing(date);
+  const { summary, physicalCashLak, cashThb } = await getDailyClosing(date);
   const now = new Date();
   const closing: DailyClosing = {
     id: crypto.randomUUID(),
@@ -643,7 +698,8 @@ export async function closeDailySales(formData: FormData): Promise<void> {
     billCount: summary.billCount,
     profit: summary.profit,
     countedCash,
-    cashDifference: countedCash - summary.cashAmount,
+    cashDifference: countedCash - physicalCashLak,
+    physicalCashLak, cashThb, countedThb, differenceThb: countedThb - cashThb,
     note,
     closedById: currentUser.id,
     closedByName: currentUser.name,
@@ -669,6 +725,7 @@ export async function closeDailySales(formData: FormData): Promise<void> {
           profit: closing.profit,
           countedCash: closing.countedCash,
           cashDifference: closing.cashDifference,
+          physicalCashLak, cashThb, countedThb, differenceThb: closing.differenceThb,
           note: closing.note,
           closedById: closing.closedById,
           closedByName: closing.closedByName,
@@ -729,6 +786,7 @@ export async function closeDailySales(formData: FormData): Promise<void> {
 }
 
 export async function createPosSale(input: PosSaleInput): Promise<PosSaleResult> {
+  if (input.tenderCurrency && !["LAK", "THB"].includes(input.tenderCurrency)) return { ok: false, message: "ສະກຸນເງິນບໍ່ຖືກຕ້ອງ" };
   const requestedItems = mergeRequestedItems(input.items);
   const discount = Math.max(0, Math.round(Number(input.discount ?? 0)));
   const paymentMethod = parseSalePaymentMethod(input.paymentMethod);
@@ -797,7 +855,13 @@ export async function createPosSale(input: PosSaleInput): Promise<PosSaleResult>
         payments,
         paymentReference,
         taxEnabled: store.storeSettings.taxEnabled,
-        taxRate: store.storeSettings.taxRate
+        taxRate: store.storeSettings.taxRate,
+        tenderCurrency: input.tenderCurrency,
+        tenderAmountMinor: input.tenderAmountMinor,
+        expectedExchangeRate: input.expectedExchangeRate,
+        thbEnabled: store.storeSettings.thbEnabled ?? false,
+        thbRate: store.storeSettings.thbPaymentRate ?? 0,
+        hasShift: Boolean(openShift)
       });
 
       if (!build.ok) {
@@ -841,6 +905,7 @@ export async function createPosSale(input: PosSaleInput): Promise<PosSaleResult>
       return {
         ...store,
         sales: [sale, ...(store.sales ?? [])],
+        cashMovements: [...thbSaleMovements(sale, currentUser), ...(store.cashMovements ?? [])],
         products: applyStockChanges(store.products, requestedItems, now),
         stockMovements: [
           ...buildLocalSaleStockMovements(store.products, requestedItems, sale, currentUser),
@@ -917,7 +982,13 @@ export async function createPosSale(input: PosSaleInput): Promise<PosSaleResult>
       payments,
       paymentReference,
       taxEnabled: settings?.taxEnabled ?? false,
-      taxRate: settings?.taxRate ?? 0
+      taxRate: settings?.taxRate ?? 0,
+      tenderCurrency: input.tenderCurrency,
+      tenderAmountMinor: input.tenderAmountMinor,
+      expectedExchangeRate: input.expectedExchangeRate,
+      thbEnabled: settings?.thbEnabled ?? false,
+      thbRate: settings?.thbPaymentRate ?? 0,
+      hasShift: Boolean(openShift)
     });
 
     if (!build.ok) {
@@ -960,6 +1031,14 @@ export async function createPosSale(input: PosSaleInput): Promise<PosSaleResult>
         ...build.saleData
       }
     })) as unknown as Sale;
+
+    // Touch the shift so a concurrent close conflicts rather than omitting cash.
+    if (sale.tenderCurrency === "THB" && openShift) {
+      await tx.cashShift.update({ where: { id: openShift.id, status: "OPEN" }, data: { updatedAt: now } });
+    }
+    for (const movement of thbSaleMovements(sale, currentUser)) {
+      await tx.cashMovement.create({ data: { ...movement, id: undefined } });
+    }
 
     for (const product of products) {
       const changes = requestedItems.filter((item) => item.productId === product.id);
@@ -1073,7 +1152,7 @@ async function restockSaleItemsInDatabase(
 
     const variants = getProductVariants(product).map((variant) =>
       variant.id === item.variantId
-        ? { ...variant, stock: variant.stock + item.quantity }
+        ? { ...variant, stock: variant.stock + item.quantity, costPrice: averageCost(variant.stock, variant.costPrice, item.quantity, item.cost) }
         : variant
     );
 
@@ -1081,11 +1160,12 @@ async function restockSaleItemsInDatabase(
       where: { id: product.id },
       data: {
         variants,
-        stock: variants.reduce((sum, variant) => sum + variant.stock, 0)
+        stock: variants.reduce((sum, variant) => sum + variant.stock, 0),
+        costPrice: variants[0]?.costPrice ?? product.costPrice
       }
     });
 
-    for (const item of items.filter((entry) => entry.productId === product.id)) {
+    {
       const beforeVariant = getProductVariants(product).find(
         (variant) => variant.id === item.variantId
       );
@@ -1230,6 +1310,12 @@ function buildSaleFromProducts(
     paymentReference: string | null;
     taxEnabled: boolean;
     taxRate: number;
+    tenderCurrency?: "LAK" | "THB";
+    tenderAmountMinor?: number;
+    expectedExchangeRate?: number;
+    thbEnabled: boolean;
+    thbRate: number;
+    hasShift: boolean;
   }
 ):
   | { ok: true; saleData: Omit<Sale, "id" | "createdAt" | "updatedAt"> }
@@ -1276,6 +1362,18 @@ function buildSaleFromProducts(
     return { ok: false, priceChanged: true, message: "ລາຄາ ຫຼື ໂປຣໂມຊັນປ່ຽນແລ້ວ ກະລຸນາກວດຍອດ ແລະ ກົດບັນທຶກອີກຄັ້ງ" };
   }
   const profit = netAmount - totals.totalCost;
+  let tender: { tenderCurrency: "THB"; tenderAmountMinor: number; exchangeRate: number; receivedAmount: number } | undefined;
+  try {
+    moneyInteger(netAmount);
+    moneyInteger(totals.totalCost);
+    moneyInteger(options.receivedAmount);
+    if (options.tenderCurrency === "THB") tender = resolveThbTender({ method: options.paymentMethod,
+      satang: options.tenderAmountMinor ?? 0, rate: options.thbRate, expectedRate: options.expectedExchangeRate,
+      enabled: options.thbEnabled, hasShift: options.hasShift });
+  } catch (error) {
+    return { ok: false, priceChanged: true, message: error instanceof Error ? error.message : "ຈໍານວນເງິນບໍ່ຖືກຕ້ອງ" };
+  }
+  const receivedLak = tender?.receivedAmount ?? options.receivedAmount;
   const normalizedPayments =
     options.paymentMethod === "SPLIT"
       ? options.payments
@@ -1289,7 +1387,7 @@ function buildSaleFromProducts(
   const paymentError = validatePosPayment({
     method: options.paymentMethod,
     netAmount,
-    receivedAmount: options.receivedAmount,
+    receivedAmount: receivedLak,
     payments: normalizedPayments
   });
   if (paymentError) return { ok: false, message: paymentError };
@@ -1300,7 +1398,7 @@ function buildSaleFromProducts(
   const taxAmount = calculateInclusiveTax(netAmount, taxRate);
   const changeAmount =
     options.paymentMethod === "CASH"
-      ? Math.max(0, options.receivedAmount - netAmount)
+      ? Math.max(0, receivedLak - netAmount)
       : 0;
 
   return {
@@ -1320,7 +1418,10 @@ function buildSaleFromProducts(
       refundAmount: 0,
       returnedCost: 0,
       receivedAmount:
-        options.paymentMethod === "CASH" ? options.receivedAmount : null,
+        options.paymentMethod === "CASH" ? receivedLak : null,
+      tenderCurrency: tender?.tenderCurrency ?? "LAK",
+      tenderAmountMinor: tender?.tenderAmountMinor ?? null,
+      exchangeRate: tender?.exchangeRate ?? null,
       changeAmount: options.paymentMethod === "CASH" ? changeAmount : null
     }
   };
@@ -1368,13 +1469,16 @@ function restockProducts(products: Product[], items: SaleItem[], updatedAt: Date
         .filter((item) => item.variantId === variant.id)
         .reduce((sum, item) => sum + item.quantity, 0);
 
-      return quantity ? { ...variant, stock: variant.stock + quantity } : variant;
+      const returnedCost = saleItems.filter(item => item.variantId === variant.id).reduce((sum, item) => sum + item.cost * item.quantity, 0);
+      return quantity ? { ...variant, stock: variant.stock + quantity,
+        costPrice: averageCost(variant.stock, variant.costPrice, quantity, Math.round(returnedCost / quantity)) } : variant;
     });
 
     return {
       ...product,
       variants,
       stock: variants.reduce((sum, variant) => sum + variant.stock, 0),
+      costPrice: variants[0]?.costPrice ?? product.costPrice,
       updatedAt
     };
   });
@@ -1591,25 +1695,19 @@ function getDateRange(value?: string) {
     return null;
   }
 
-  const [, year, month, day] = match;
-  const start = new Date(Number(year), Number(month) - 1, Number(day), 0, 0, 0, 0);
-  const end = new Date(start);
-  end.setDate(start.getDate() + 1);
+  const start = new Date(`${value}T00:00:00+07:00`);
+  if (Number.isNaN(start.getTime()) || formatLaoDateInput(start) !== value) return null;
+  const end = new Date(start.getTime() + 86_400_000);
 
   return { start, end };
 }
 
 function isSameDay(date: Date, target: Date) {
-  const current = new Date(date);
-
-  return (
-    current.getFullYear() === target.getFullYear() &&
-    current.getMonth() === target.getMonth() &&
-    current.getDate() === target.getDate()
-  );
+  return formatLaoDateInput(new Date(date)) === formatLaoDateInput(target);
 }
 
 function revalidatePosPaths() {
+  revalidatePath("/pos/shifts");
   revalidatePath("/pos");
   revalidatePath("/pos/history");
   revalidatePath("/pos/closing");
@@ -1624,6 +1722,8 @@ function revalidatePosPaths() {
 }
 
 function revalidatePosSalePaths() {
+  revalidatePath("/pos/shifts");
+  revalidatePath("/pos/closing");
   revalidatePath("/pos");
   revalidatePath("/pos/history");
   revalidatePath("/products");

@@ -94,6 +94,7 @@ model Product {
   stock         Int
   lowStockAlert Int              @default(5)
   imageUrl      String?
+  catalogSource CatalogSource?
   isActive      Boolean          @default(true)
   variants      ProductVariant[]
   createdAt     DateTime         @default(now())
@@ -103,6 +104,14 @@ model Product {
   @@index([isActive])
   @@index([updatedAt])
   @@map("products")
+}
+
+type CatalogSource {
+  provider      String
+  barcode       String
+  sourceUrl     String
+  retrievedAt   String
+  imageImported Boolean
 }
 
 model Order {
@@ -169,6 +178,9 @@ model Sale {
   paymentReference String?
   receivedAmount Int?
   changeAmount   Int?
+  tenderCurrency String?
+  tenderAmountMinor Int?
+  exchangeRate   Int?
   taxRate        Int?
   taxAmount      Int?
   refundAmount   Int?
@@ -210,6 +222,10 @@ model DailyClosing {
   profit         Int
   countedCash    Int
   cashDifference Int
+  physicalCashLak Int?
+  cashThb        Int?
+  countedThb     Int?
+  differenceThb  Int?
   note           String?
   closedById     String?
   closedByName   String?
@@ -263,6 +279,10 @@ model CashShift {
   cashierName    String
   status         ShiftStatus @default(OPEN)
   openingCash    Int
+  openingThb     Int?
+  expectedThb    Int?
+  countedThb     Int?
+  differenceThb  Int?
   expectedCash   Int?
   countedCash    Int?
   cashDifference Int?
@@ -285,6 +305,9 @@ model CashMovement {
   shiftId   String
   type      CashMovementType
   amount    Int
+  currency  String?
+  source    String?
+  referenceId String?
   reason    String
   note      String?
   userId    String
@@ -350,6 +373,9 @@ model StockMovement {
   stockBefore   Int
   stockAfter    Int
   unitCost      Int?
+  purchaseCurrency String?
+  purchaseAmountMinor Int?
+  purchaseRate Int?
   referenceType String?
   referenceId   String?
   referenceNo   String?
@@ -471,6 +497,9 @@ model StoreSettingsRecord {
   defaultRegisterName String?
   staffMaxDiscountPercent Int?
   requireShiftForSale Boolean?
+  thbEnabled         Boolean?
+  thbPaymentRate     Int?
+  thbPurchaseRate    Int?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -501,6 +530,9 @@ type ProductVariant {
   lowStockAlert Int
   // Calendar date (YYYY-MM-DD) in the shop timezone; optional for older stock.
   expiryDate    String?
+  purchaseCurrency String?
+  purchaseAmountMinor Int?
+  purchaseRate Int?
 }
 
 type SaleItem {
@@ -545,4 +577,7 @@ type PurchaseOrderItem {
   quantityOrdered  Int
   quantityReceived Int
   unitCost         Int
+  purchaseCurrency String?
+  purchaseAmountMinor Int?
+  purchaseRate Int?
 }

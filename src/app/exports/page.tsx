@@ -222,8 +222,10 @@ export default async function ExportsPage() {
                 <th>ເງິນສົດ</th>
                 <th>ເງິນໂອນ</th>
                 <th>ລວມ</th>
-                <th>ເງິນສົດຈິງ</th>
-                <th>ສ່ວນຕ່າງ</th>
+                <th>ກີບຮັບສຸດທິຈິງ</th>
+                <th>ສ່ວນຕ່າງກີບ</th>
+                <th>ບາດຮັບຈິງ</th>
+                <th>ສ່ວນຕ່າງບາດ</th>
                 <th>ໝາຍເຫດ</th>
               </tr>
             </thead>
@@ -237,6 +239,8 @@ export default async function ExportsPage() {
                   <td>{formatCurrency(closing.totalAmount)}</td>
                   <td>{formatCurrency(closing.countedCash)}</td>
                   <td>{formatCurrency(closing.cashDifference)}</td>
+                  <td>{formatThb(closing.countedThb ?? 0)}</td>
+                  <td>{formatThb(closing.differenceThb ?? 0)}</td>
                   <td>{closing.note || "-"}</td>
                 </tr>
               ))}
@@ -305,3 +309,4 @@ function saleStatusLabel(value?: string) {
 
   return "ປົກກະຕິ";
 }
+import { formatThb } from "@/lib/currency";

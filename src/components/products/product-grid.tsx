@@ -1,4 +1,5 @@
 "use client";
+import { formatRate, formatThb } from "@/lib/currency";
 
 import Image from "next/image";
 import { startTransition, useActionState, useState } from "react";
@@ -17,6 +18,7 @@ import {
 } from "@/actions/product.action";
 import type { Product, ProductFormState } from "@/types";
 import { ProductExpiryField } from "./product-expiry-field";
+import { CatalogAttributionNote } from "./catalog-attribution";
 import { ExpiryBadge } from "./expiry-badge";
 import { formatExpiryDate, getProductExpiryAlerts } from "@/lib/product-expiry";
 import { Badge } from "@/components/ui/badge";
@@ -216,6 +218,7 @@ function ProductDetailDialog({
             </p>
             <h3 className="mt-1 text-xl font-bold text-slate-950">{product.name}</h3>
             <p className="text-sm text-slate-500">{product.category}</p>
+            <CatalogAttributionNote source={product.catalogSource} />
           </div>
           <button
             type="button"
@@ -469,6 +472,9 @@ function ProductDetailDialog({
                           defaultValue={variant.costPrice}
                           required
                         />
+                        {variant.purchaseCurrency === "THB" ? <span className="block text-xs leading-5 text-indigo-700">
+                          ຊື້ຫຼ້າສຸດ {formatThb(variant.purchaseAmountMinor ?? 0)} / ໜ່ວຍ · ເຣດ {formatRate(variant.purchaseRate ?? 0)} ກີບ/ບາດ. ຊ່ອງຂ້າງເທິງແມ່ນຕົ້ນທຶນສະເລ່ຍເປັນກີບ.
+                        </span> : null}
                       </label>
                       <label className="space-y-1.5">
                         <span className="text-xs font-semibold text-slate-500">

@@ -14,10 +14,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { MoneyInput } from "@/components/ui/money-input";
+import { PurchaseCostFields } from "@/components/products/purchase-cost-fields";
+import { getStoreSettings } from "@/actions/settings.action";
+import { formatRate, formatThb } from "@/lib/currency";
 import { formatCurrency, formatDate, formatProductVariantName, getProductVariants } from "@/lib/utils";
 
 export default async function InventoryPage() {
-  const data = await getInventoryWorkspace();
+  const [data, settings] = await Promise.all([getInventoryWorkspace(), getStoreSettings()]);
   const productOptions = data.products.flatMap((product) =>
     getProductVariants(product).map((variant) => ({ product, variant }))
   );
@@ -50,7 +53,9 @@ export default async function InventoryPage() {
             <form action={createPurchaseOrder} className="grid gap-2">
               <Select name="supplierId" required defaultValue=""><option value="" disabled>ເລືອກຜູ້ສະໜອງ</option>{data.suppliers.filter((item) => item.isActive).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</Select>
               <Select name="productVariant" required defaultValue=""><option value="" disabled>ເລືອກສິນຄ້າ</option>{productOptions.map(({ product, variant }) => <option key={`${product.id}-${variant.id}`} value={`${product.id}::${variant.id}`}>{formatProductVariantName(product.name, variant.name)} · {variant.sku}</option>)}</Select>
-              <div className="grid grid-cols-2 gap-2"><Input name="quantity" type="number" min={1} placeholder="ຈໍານວນ" required /><MoneyInput name="unitCost" min={0} placeholder="ຕົ້ນທຶນ/ໜ່ວຍ" /></div>
+              <Input name="quantity" type="number" min={1} step={1} placeholder="ຈໍານວນ" required />
+              <div><PurchaseCostFields prefix="purchase" defaultRate={settings.thbPurchaseRate} /></div>
+              <p className="text-xs text-slate-500">ເມື່ອຮັບເຂົ້າ ລະບົບຄຳນວນຕົ້ນທຶນສະເລ່ຍກັບຂອງທີ່ເຫຼືອ.</p>
               <Textarea name="note" placeholder="ໝາຍເຫດ" />
               <Button type="submit">ສ້າງໃບສັ່ງຊື້</Button>
             </form>
@@ -90,7 +95,15 @@ export default async function InventoryPage() {
         <CardHeader><CardTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5" />ໃບສັ່ງຊື້</CardTitle></CardHeader>
         <CardContent className="overflow-x-auto">
           <table className="w-full min-w-[800px] text-left text-sm"><thead><tr className="border-b border-slate-200 text-slate-500"><th className="p-2">ເລກທີ</th><th className="p-2">ຜູ້ສະໜອງ</th><th className="p-2">ສິນຄ້າ</th><th className="p-2">ລວມ</th><th className="p-2">ສະຖານະ</th><th className="p-2">ຈັດການ</th></tr></thead><tbody>
-            {data.purchaseOrders.map((purchase) => <tr key={purchase.id} className="border-b border-slate-100"><td className="p-2 font-bold">{purchase.purchaseNo}</td><td className="p-2">{purchase.supplierName}</td><td className="p-2">{purchase.items.map((item) => `${formatProductVariantName(item.name, item.variantName)} x${item.quantityOrdered}`).join(", ")}</td><td className="p-2">{formatCurrency(purchase.totalCost)}</td><td className="p-2">{purchase.status}</td><td className="p-2">{purchase.status === "ORDERED" || purchase.status === "PARTIALLY_RECEIVED" ? <form action={receivePurchaseOrder}><input type="hidden" name="purchaseId" value={purchase.id} /><Button type="submit" className="min-h-9 px-3 text-xs">ຮັບເຂົ້າທັງໝົດ</Button></form> : "-"}</td></tr>)}
+            {data.purchaseOrders.map((purchase) => <tr key={purchase.id} className="border-b border-slate-100">
+              <td className="p-2 font-bold">{purchase.purchaseNo}</td><td className="p-2">{purchase.supplierName}</td>
+              <td className="p-2">{purchase.items.map((item, index) => <div key={index} className="py-1">
+                {formatProductVariantName(item.name, item.variantName)} x{item.quantityOrdered}
+                {item.purchaseCurrency === "THB" ? <p className="text-xs text-indigo-700">ຊື້ {formatThb(item.purchaseAmountMinor ?? 0)} / ໜ່ວຍ · ເຣດ {formatRate(item.purchaseRate ?? 0)} ກີບ/ບາດ · ຕົ້ນທຶນ {formatCurrency(item.unitCost)}</p> : null}
+              </div>)}</td>
+              <td className="p-2">{formatCurrency(purchase.totalCost)}</td><td className="p-2">{purchase.status}</td>
+              <td className="p-2">{purchase.status === "ORDERED" || purchase.status === "PARTIALLY_RECEIVED" ? <form action={receivePurchaseOrder}><input type="hidden" name="purchaseId" value={purchase.id} /><Button type="submit" className="min-h-9 px-3 text-xs">ຮັບເຂົ້າທັງໝົດ</Button></form> : "-"}</td>
+            </tr>)}
           </tbody></table>
         </CardContent>
       </Card>

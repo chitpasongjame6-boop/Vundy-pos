@@ -1,9 +1,10 @@
 "use client";
+import { formatRate, formatThb } from "@/lib/currency";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useActionState, useState } from "react";
 import { Banknote, Eye, Package, Printer, X } from "lucide-react";
-import { returnPosSaleItems, voidPosSale } from "@/actions/pos.action";
+import { submitReturnPosSaleItems, submitVoidPosSale } from "@/actions/pos.action";
 import type { Sale, StoreSettings } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -197,6 +198,8 @@ function SaleDetail({
   storeSettings: StoreSettings;
   canViewProfit: boolean;
 }) {
+  const [returnState, returnAction, returning] = useActionState(submitReturnPosSaleItems, { message: "" });
+  const [voidState, voidAction, voiding] = useActionState(submitVoidPosSale, { message: "" });
   return (
     <div className="grid gap-3 text-sm">
       <div className="rounded-xl border border-slate-200 p-3">
@@ -226,9 +229,13 @@ function SaleDetail({
           {sale.paymentMethod === "CASH" ? (
             <>
               <DetailLine
-                label="ຮັບເງິນ"
+                label={sale.tenderCurrency === "THB" ? "ຮັບຊໍາລະທຽບກີບ" : "ຮັບເງິນ"}
                 value={formatCurrency(sale.receivedAmount ?? 0)}
               />
+              {sale.tenderCurrency === "THB" ? <>
+                <DetailLine label="ຮັບບາດຈິງ (ຂໍ້ມູນພາຍໃນ)" value={formatThb(sale.tenderAmountMinor ?? 0)} />
+                <DetailLine label="ເຣດໃນບິນ · 1 ບາດ" value={`${formatRate(sale.exchangeRate ?? 0)} ກີບ`} />
+              </> : null}
               <DetailLine
                 label="ເງິນທອນ"
                 value={formatCurrency(sale.changeAmount ?? 0)}
@@ -291,7 +298,8 @@ function SaleDetail({
       {isActiveSale(sale) ? (
         <div className="grid gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
           <p className="text-sm font-bold text-amber-950">ຄືນສິນຄ້າບາງລາຍການ</p>
-          <form action={returnPosSaleItems} className="grid gap-2">
+          {sale.tenderCurrency === "THB" ? <p className="text-xs leading-5 text-amber-900">ບິນຮັບບາດ: ຄືນ/ຍົກເລີກແລ້ວຈ່າຍຄືນເປັນເງິນສົດກີບ ຕາມຍອດບິນເດີມ (ບໍ່ໃຊ້ເຣດມື້ນີ້). ກະລຸນາເປີດກະກ່ອນ.</p> : null}
+          <form action={returnAction} className="grid gap-2">
             <input type="hidden" name="saleId" value={sale.id} />
             {sale.items.map((item, index) => (
               <label key={`${item.productId}-${item.variantId}-${index}`} className="grid grid-cols-[1fr_5rem] items-center gap-2 text-xs">
@@ -303,8 +311,8 @@ function SaleDetail({
             ))}
             <Select name="refundMethod" defaultValue={sale.paymentMethod === "SPLIT" ? "CASH" : sale.paymentMethod}>
               <option value="CASH">ຄືນເປັນເງິນສົດ</option>
-              <option value="TRANSFER">ຄືນເປັນເງິນໂອນ</option>
-              <option value="OTHER">ອື່ນໆ</option>
+              {sale.tenderCurrency !== "THB" ? <><option value="TRANSFER">ຄືນເປັນເງິນໂອນ</option>
+              <option value="OTHER">ອື່ນໆ</option></> : null}
             </Select>
             <label className="space-y-1.5">
               <span className="text-xs font-semibold text-amber-800">ເຫດຜົນ</span>
@@ -319,11 +327,12 @@ function SaleDetail({
             </label>
             <Textarea name="note" placeholder="ໝາຍເຫດເພີ່ມເຕີມ" className="min-h-16" />
             {!canViewProfit ? <Input name="approvalPin" type="password" placeholder="PIN ເຈົ້າຂອງຮ້ານ" required autoComplete="off" /> : null}
-            <Button type="submit" variant="secondary" className="w-full">ຄືນລາຍການທີ່ເລືອກ</Button>
+            <p role="alert" className="text-sm text-rose-700">{returnState.message}</p>
+            <Button type="submit" variant="secondary" className="w-full" disabled={returning || voiding}>{returning ? "ກຳລັງບັນທຶກ..." : "ຄືນລາຍການທີ່ເລືອກ"}</Button>
           </form>
 
           {sale.status !== "PARTIALLY_RETURNED" ? (
-            <form action={voidPosSale} className="grid gap-2 border-t border-amber-200 pt-3">
+            <form action={voidAction} className="grid gap-2 border-t border-amber-200 pt-3">
               <input type="hidden" name="saleId" value={sale.id} />
               <p className="text-xs font-bold text-rose-800">ຍົກເລີກ / ຄືນທັງບິນ</p>
               <Select name="status" defaultValue="RETURNED">
@@ -338,7 +347,8 @@ function SaleDetail({
               </Select>
               <Textarea name="note" placeholder="ໝາຍເຫດ" className="min-h-16" />
               {!canViewProfit ? <Input name="approvalPin" type="password" placeholder="PIN ເຈົ້າຂອງຮ້ານ" required autoComplete="off" /> : null}
-              <Button type="submit" className="w-full bg-rose-600 hover:bg-rose-700">ຍົກເລີກ / ຄືນທັງບິນ</Button>
+              <p role="alert" className="text-sm text-rose-700">{voidState.message}</p>
+              <Button type="submit" className="w-full bg-rose-600 hover:bg-rose-700" disabled={returning || voiding}>{voiding ? "ກຳລັງບັນທຶກ..." : "ຍົກເລີກ / ຄືນທັງບິນ"}</Button>
             </form>
           ) : null}
         </div>

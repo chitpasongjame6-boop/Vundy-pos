@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { ChangeEvent, ReactNode } from "react";
-import { startTransition, useActionState, useEffect, useState } from "react";
+import { startTransition, useActionState, useEffect, useEffectEvent, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   ArrowLeft,
@@ -15,16 +15,22 @@ import {
   Package,
   Plus,
   Save,
+  Search,
   Trash2
 } from "lucide-react";
 import { submitCreateProduct } from "@/actions/product.action";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Input, Select } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
 import { MoneyInput } from "@/components/ui/money-input";
 import { cn } from "@/lib/utils";
 import { ProductExpiryField } from "./product-expiry-field";
+import { PurchaseCostFields } from "./purchase-cost-fields";
 import type { ProductFormState } from "@/types";
+import { findBarcodeSlot, listenForBarcodeScan } from "@/lib/barcode-scanner";
+import { isCatalogBarcode } from "@/lib/product-catalog";
+import { useProductCatalog } from "./use-product-catalog";
+import { ProductCatalogStatus } from "./product-catalog-status";
 
 const fieldClass = "space-y-1.5";
 const labelClass = "text-sm font-bold text-slate-700";
@@ -37,9 +43,10 @@ type VariantRow = {
 
 type ProductFormProps = {
   categories: string[];
+  purchaseRate?: number;
 };
 
-export function ProductForm({ categories }: ProductFormProps) {
+export function ProductForm({ categories, purchaseRate = 0 }: ProductFormProps) {
   const [formState, formAction, pending] = useActionState<ProductFormState, FormData>(
     submitCreateProduct, { ok: null, message: "" }
   );
@@ -49,6 +56,33 @@ export function ProductForm({ categories }: ProductFormProps) {
   ]);
   const [imagePreview, setImagePreview] = useState("");
   const [imageFileName, setImageFileName] = useState("");
+  const formRef = useRef<HTMLFormElement>(null);
+  const [scanMessage, setScanMessage] = useState("");
+  const catalog = useProductCatalog(formRef);
+  const lookupScannedProduct = useEffectEvent(() => { void catalog.lookup(); });
+  const importedProduct = catalog.result?.status === "found" ? catalog.result.product : null;
+  const displayedImage = imagePreview || (catalog.useImage ? importedProduct?.imageUrl : "") || "";
+
+  useEffect(() => {
+    if (pending) return;
+    return listenForBarcodeScan((barcode) => {
+      // Query the current visible rows, including newly added/removed sizes.
+      const fields = Array.from(formRef.current?.querySelectorAll<HTMLInputElement>('input[name="variantSku"]') ?? []);
+      const slot = findBarcodeSlot(fields.map(field => field.value), barcode);
+      if (slot.kind === "duplicate") {
+        setScanMessage(`Barcode ${barcode} ມີແລ້ວໃນຊ່ອງທີ ${slot.index + 1}`);
+      } else if (slot.kind === "full") {
+        setScanMessage("ທຸກຊ່ອງມີ Barcode ແລ້ວ — ລຶບລະຫັດທີ່ຕ້ອງການປ່ຽນ ຫຼື ເພີ່ມຂະໜາດກ່ອນສະແກນ");
+      } else {
+        // These are uncontrolled inputs: update the actual submitted value
+        // without focusing, scrolling or opening a mobile software keyboard.
+        fields[slot.index].value = barcode;
+        fields[slot.index].dispatchEvent(new Event("input", { bubbles: true }));
+        setScanMessage(`ຮັບ Barcode ${barcode} ແລ້ວ · ຊ່ອງທີ ${slot.index + 1}`);
+        if (slot.index === 0 && isCatalogBarcode(barcode)) lookupScannedProduct();
+      }
+    });
+  }, [pending]);
 
   useEffect(() => {
     return () => {
@@ -64,6 +98,7 @@ export function ProductForm({ categories }: ProductFormProps) {
   }
 
   function removeVariant(id: string) {
+    if (id === variants[0]?.id) catalog.reset();
     setVariants((current) =>
       current.length > 1 ? current.filter((variant) => variant.id !== id) : current
     );
@@ -75,20 +110,60 @@ export function ProductForm({ categories }: ProductFormProps) {
     if (imagePreview) URL.revokeObjectURL(imagePreview);
     setImagePreview(file ? URL.createObjectURL(file) : "");
     setImageFileName(file?.name ?? "");
+    if (file) catalog.setUseImage(false);
   }
 
   const visibleVariants = hasVariants ? variants : variants.slice(0, 1);
 
   return (
     <form
+      ref={formRef}
       action={formAction}
+      onChange={(event) => {
+        const target = event.target;
+        if (target instanceof HTMLInputElement && ["name", "category", "variantName"].includes(target.name)) {
+          target.dataset.catalogTouched = "true";
+        }
+      }}
       onSubmit={(event) => {
         event.preventDefault();
+        if (catalog.loading) return;
         const data = new FormData(event.currentTarget);
         startTransition(() => formAction(data));
       }}
       className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_19rem]"
     >
+      <input type="hidden" name="catalogToken" value={catalog.result?.status === "found" ? catalog.result.token ?? "" : ""} />
+      <input type="hidden" name="catalogUseImage" value={catalog.useImage ? "on" : ""} />
+      <div className="flex items-start gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/70 p-4 xl:col-span-2">
+        <Barcode className="mt-0.5 h-5 w-5 shrink-0 text-indigo-600" aria-hidden />
+        <div className="min-w-0 space-y-1">
+          <p className="text-sm font-bold text-indigo-950">
+            {pending ? "ກຳລັງບັນທຶກ..." : "ພ້ອມສະແກນ Barcode — ບໍ່ຕ້ອງຄລິກຊ່ອງ"}
+          </p>
+          <p className="text-xs leading-5 text-indigo-800">
+            ໃຊ້ເຄື່ອງສະແກນ USB / Bluetooth ແບບຄີບອດ ທີ່ສົ່ງ Enter ຫຼື Tab ທ້າຍລະຫັດ.
+            ລະຫັດຈະເຂົ້າຊ່ອງ SKU ທີ່ວ່າງທຳອິດ ໂດຍບໍ່ຂຽນທັບຂໍ້ມູນເກົ່າ.
+          </p>
+          <p className="text-xs leading-5 text-slate-600">
+            ຖ້າກຳລັງພິມໃນຊ່ອງອື່ນ ໃຫ້ຄລິກພື້ນທີ່ວ່າງກ່ອນສະແກນ.
+          </p>
+          <p role="status" aria-live="polite" aria-atomic="true" className="break-all text-sm font-semibold text-indigo-900">
+            {scanMessage}
+          </p>
+          <p className="text-xs leading-5 text-indigo-800">
+            Barcode ທຳອິດ: ຄົ້ນຫາຊື່, ໝວດໝູ່, ຂະໜາດ ແລະ ຮູບຈາກ Open Food Facts / Open Beauty Facts ອັດຕະໂນມັດ.
+            ຕົ້ນທຶນ, ລາຄາຂາຍ, ສະຕ໋ອກ ແລະ ວັນໝົດອາຍຸ ຕ້ອງປ້ອນເອງ.
+          </p>
+          <div className="flex flex-wrap gap-2 py-2">
+            <Button type="button" variant="secondary" disabled={pending || catalog.loading} onClick={() => void catalog.lookup()}>
+              <Search className="h-4 w-4" aria-hidden />{catalog.loading ? "ກຳລັງຄົ້ນຫາ..." : "ຄົ້ນຫາຈາກ Barcode ທຳອິດ"}
+            </Button>
+            {catalog.result || catalog.loading ? <Button type="button" variant="ghost" disabled={pending} onClick={catalog.reset}>ຍົກເລີກຂໍ້ມູນທີ່ດຶງມາ</Button> : null}
+          </div>
+          <ProductCatalogStatus result={catalog.result} loading={catalog.loading} useImage={catalog.useImage} onUseImage={catalog.setUseImage} />
+        </div>
+      </div>
       <div className="grid min-w-0 gap-5">
         <Card className="overflow-hidden">
           <CardHeader className="border-b border-slate-100 bg-gradient-to-r from-indigo-50/80 to-white p-5 sm:p-6">
@@ -118,16 +193,12 @@ export function ProductForm({ categories }: ProductFormProps) {
                 <span className={labelClass}>
                   ໝວດໝູ່ <RequiredMark />
                 </span>
-                <Select name="category" required defaultValue="">
-                  <option value="" disabled>
-                    ເລືອກໝວດໝູ່ສິນຄ້າ
-                  </option>
+                <Input name="category" list="product-categories" required autoComplete="off" placeholder="ເລືອກ ຫຼື ພິມໝວດໝູ່" />
+                <datalist id="product-categories">
                   {categories.map((category) => (
-                    <option key={category} value={category}>
-                      {category}
-                    </option>
+                    <option key={category} value={category} />
                   ))}
-                </Select>
+                </datalist>
               </label>
             </div>
 
@@ -136,22 +207,22 @@ export function ProductForm({ categories }: ProductFormProps) {
               <label
                 className={cn(
                   "group relative flex min-h-52 cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed px-5 py-6 text-center transition",
-                  imagePreview
+                  displayedImage
                     ? "border-indigo-300 bg-slate-900"
                     : "border-slate-200 bg-slate-50 hover:border-indigo-300 hover:bg-indigo-50/50"
                 )}
               >
-                {imagePreview ? (
+                {displayedImage ? (
                   <span
                     className="absolute inset-0 bg-cover bg-center opacity-65 transition group-hover:opacity-45"
-                    style={{ backgroundImage: `url(\"${imagePreview}\")` }}
+                    style={{ backgroundImage: `url(\"${displayedImage}\")` }}
                     aria-hidden
                   />
                 ) : null}
                 <span
                   className={cn(
                     "relative z-10 flex h-12 w-12 items-center justify-center rounded-2xl shadow-sm",
-                    imagePreview ? "bg-white/90 text-indigo-700" : "bg-white text-indigo-600"
+                    displayedImage ? "bg-white/90 text-indigo-700" : "bg-white text-indigo-600"
                   )}
                 >
                   <ImagePlus className="h-6 w-6" aria-hidden />
@@ -159,18 +230,18 @@ export function ProductForm({ categories }: ProductFormProps) {
                 <span
                   className={cn(
                     "relative z-10 mt-3 text-sm font-extrabold",
-                    imagePreview ? "text-white" : "text-slate-800"
+                    displayedImage ? "text-white" : "text-slate-800"
                   )}
                 >
-                  {imagePreview ? "ປ່ຽນຮູບສິນຄ້າ" : "ເລືອກຮູບສິນຄ້າ"}
+                  {displayedImage ? "ປ່ຽນຮູບສິນຄ້າ" : "ເລືອກຮູບສິນຄ້າ"}
                 </span>
                 <span
                   className={cn(
                     "relative z-10 mt-1 max-w-full truncate text-xs",
-                    imagePreview ? "text-white/80" : "text-slate-500"
+                    displayedImage ? "text-white/80" : "text-slate-500"
                   )}
                 >
-                  {imageFileName || "JPG, PNG, WEBP ຫຼື GIF"}
+                  {imageFileName || (catalog.useImage && importedProduct?.imageUrl ? "ຮູບຈາກຖານຂໍ້ມູນ" : "JPG, PNG, WEBP ຫຼື GIF")}
                 </span>
                 <input
                   name="productImage"
@@ -291,7 +362,10 @@ export function ProductForm({ categories }: ProductFormProps) {
                       />
                     </label>
                   ) : (
-                    <input type="hidden" name="variantName" value="ມາດຕະຖານ" />
+                    <label className={fieldClass}>
+                      <span className={labelClass}>ຂະໜາດ / ຮູບແບບ</span>
+                      <Input name="variantName" defaultValue="ມາດຕະຖານ" placeholder="100ml / ມາດຕະຖານ" required />
+                    </label>
                   )}
 
                   <label className={cn(fieldClass, !hasVariants && "sm:col-span-2 xl:col-span-2")}>
@@ -308,6 +382,16 @@ export function ProductForm({ categories }: ProductFormProps) {
                         placeholder="ສະແກນ Barcode ຫຼື ພິມ SKU"
                         autoComplete="off"
                         className="pl-10"
+                        onChange={() => { if (index === 0) catalog.reset(); }}
+                        onKeyDown={(event) => {
+                          // Scanning/typing directly into SKU still works, but
+                          // Enter must not submit the product before review.
+                          if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                            event.preventDefault();
+                            if (index === 0 && !pending) void catalog.lookup();
+                          }
+                          if (event.key === "Tab" && index === 0 && !pending && isCatalogBarcode(event.currentTarget?.value.trim() ?? "")) void catalog.lookup();
+                        }}
                         required
                       />
                     </div>
@@ -336,18 +420,7 @@ export function ProductForm({ categories }: ProductFormProps) {
                     />
                   </label>
 
-                  <label className={fieldClass}>
-                    <span className={labelClass}>
-                      ຕົ້ນທຶນ <RequiredMark />
-                    </span>
-                    <MoneyInput
-                      name="variantCostPrice"
-                      min={0}
-                      step={1000}
-                      placeholder="0"
-                      required
-                    />
-                  </label>
+                  <PurchaseCostFields defaultRate={purchaseRate} />
 
                   <label className={fieldClass}>
                     <span className={labelClass}>
@@ -420,7 +493,7 @@ export function ProductForm({ categories }: ProductFormProps) {
             {formState.message ? (
               <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{formState.message}</p>
             ) : null}
-            <Button type="submit" className="w-full" disabled={pending}>
+            <Button type="submit" className="w-full" disabled={pending || catalog.loading}>
               <Save className="h-4 w-4" aria-hidden />
               {pending ? "ກຳລັງບັນທຶກ..." : "ບັນທຶກສິນຄ້າ"}
             </Button>

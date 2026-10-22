@@ -37,6 +37,7 @@ import {
 import { PageHeader } from "@/components/layout/page-header";
 import { BackupControls } from "@/components/settings/backup-controls";
 import { HardwareTools } from "@/components/settings/hardware-tools";
+import { CurrencySettings } from "@/components/settings/currency-settings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -70,6 +71,7 @@ export default async function SettingsPage() {
           ["#store", "ຂໍ້ມູນຮ້ານ"],
           ["#pos-bill", "ບິນ POS"],
           ["#pos-operations", "POS / ອາກອນ"],
+          ["#currency", "ເງິນບາດ / ເຣດ"],
           ["#catalog", "ສິນຄ້າ"],
           ["#members", "ສະມາຊິກ"],
           ["#shipping", "ຂົນສົ່ງ"],
@@ -84,6 +86,7 @@ export default async function SettingsPage() {
           </a>
         ))}
       </nav>
+      <CurrencySettings settings={storeSettings} />
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         <Card id="store" className="scroll-mt-24">
           <CardHeader>

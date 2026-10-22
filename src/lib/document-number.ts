@@ -22,6 +22,14 @@ export function formatDateInput(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
+export function formatLaoDateInput(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Vientiane", year: "numeric", month: "2-digit", day: "2-digit"
+  }).formatToParts(date);
+  const value = (type: string) => parts.find(part => part.type === type)?.value ?? "";
+  return `${value("year")}-${value("month")}-${value("day")}`;
+}
+
 export function getDayRange(value?: string) {
   const date = parseDateInput(value) ?? new Date();
   const start = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);

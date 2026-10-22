@@ -69,7 +69,10 @@ export const defaultStoreSettings: StoreSettings = {
   defaultBranchName: "ຮ້ານຫຼັກ",
   defaultRegisterName: "ເຄື່ອງ 1",
   staffMaxDiscountPercent: 0,
-  requireShiftForSale: false
+  requireShiftForSale: false,
+  thbEnabled: false,
+  thbPaymentRate: 0,
+  thbPurchaseRate: 0
 };
 export const defaultMemberTiers: MemberTier[] = [
   {

@@ -13,7 +13,7 @@ export async function GET() {
   await requireOwner();
   const data = hasDatabase ? await readDatabaseBackup() : await readLocalStore();
   const payload = {
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     source: hasDatabase ? "mongodb" : "local",
     data
@@ -38,14 +38,17 @@ export async function POST(request: Request) {
     return Response.json({ ok: false, message: "ໄຟລ໌ JSON ບໍ່ຖືກຕ້ອງ" }, { status: 400 });
   }
 
-  if (payload.version !== 1 || !isBackupData(payload.data)) {
+  if (![1, 2].includes(payload.version ?? 0) || !isBackupData(payload.data)) {
     return Response.json({ ok: false, message: "ຮູບແບບ Backup ບໍ່ຖືກຕ້ອງ" }, { status: 400 });
   }
 
+  // Older kip-only backups may predate some collections and currency settings.
+  const data = normalizeBackup(payload.data);
+
   if (!hasDatabase) {
-    await updateLocalStore(() => payload.data as LocalStore);
+    await updateLocalStore(() => data);
   } else {
-    await restoreDatabase(payload.data);
+    await restoreDatabase(data);
   }
 
   return Response.json({ ok: true, message: "ກູ້ຄືນຂໍ້ມູນສໍາເລັດ" });
@@ -107,8 +110,8 @@ async function restoreDatabase(data: LocalStore) {
     if ((data.expenses ?? []).length) await tx.expense.createMany({ data: data.expenses as never });
     await tx.storeSettingsRecord.upsert({
       where: { id: "default" },
-      update: data.storeSettings,
-      create: { id: "default", ...data.storeSettings }
+      update: { ...defaultStoreSettings, ...data.storeSettings },
+      create: { id: "default", ...defaultStoreSettings, ...data.storeSettings }
     });
   });
 }
@@ -119,4 +122,15 @@ function isBackupData(value: unknown): value is LocalStore {
   return Array.isArray(data.products) && Array.isArray(data.orders) &&
     Array.isArray(data.sales) && Array.isArray(data.members) &&
     Boolean(data.storeSettings && typeof data.storeSettings === "object");
+}
+
+function normalizeBackup(data: LocalStore): LocalStore {
+  return { ...data,
+    dailyClosings: data.dailyClosings ?? [], memberTiers: data.memberTiers ?? [], categories: data.categories ?? [],
+    branches: data.branches ?? [], registers: data.registers ?? [], cashShifts: data.cashShifts ?? [],
+    cashMovements: data.cashMovements ?? [], saleReturns: data.saleReturns ?? [], stockMovements: data.stockMovements ?? [],
+    auditLogs: data.auditLogs ?? [], suppliers: data.suppliers ?? [], purchaseOrders: data.purchaseOrders ?? [],
+    expenses: data.expenses ?? [], promotions: data.promotions ?? [],
+    storeSettings: { ...defaultStoreSettings, ...data.storeSettings }
+  };
 }

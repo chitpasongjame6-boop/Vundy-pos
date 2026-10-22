@@ -4,10 +4,10 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input, Textarea } from "@/components/ui/input";
-import { MoneyInput } from "@/components/ui/money-input";
 import { FilterBar, MetricCard } from "@/components/ui/patterns";
 import { getCurrentUser } from "@/lib/auth";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatThb } from "@/lib/currency";
 
 export default async function PosClosingPage({
   searchParams
@@ -46,7 +46,7 @@ export default async function PosClosingPage({
       <div className={`mb-4 grid grid-cols-2 gap-3 ${canViewProfit ? "xl:grid-cols-5" : "xl:grid-cols-4"}`}>
         <MetricCard
           icon={Banknote}
-          label="ເງິນສົດຕາມລະບົບ"
+          label="ຍອດຂາຍເງິນສົດ (ທຽບກີບ)"
           value={formatCurrency(data.summary.cashAmount)}
           tone="emerald"
         />
@@ -82,16 +82,26 @@ export default async function PosClosingPage({
         <Card>
           <CardContent>
             <form action={closeDailySales} className="grid gap-3">
+              <div className="space-y-2 rounded-xl bg-indigo-50 p-3 text-sm">
+                <p>ຮັບສຸດທິເປັນກີບ: <strong>{formatCurrency(data.physicalCashLak)}</strong></p>
+                <p>ຮັບສຸດທິເປັນບາດ: <strong>{formatThb(data.cashThb)}</strong></p>
+                <p className="text-xs leading-5 text-slate-600">ແຍກເງິນທີ່ຮັບຈິງ ຫັກທອນ/ຄືນເງິນກີບ. ຍອດກີບອາດຕິດລົບເມື່ອຮັບບາດແລ້ວທອນກີບ. ບໍ່ລວມເງິນເປີດກະ ຫຼື ເງິນເຂົ້າ/ອອກທົ່ວໄປ — ກວດຍອດລິ້ນຊັກທີ່ໜ້າກະຂາຍ.</p>
+              </div>
               <input type="hidden" name="date" value={data.date} />
               <label className="space-y-1.5">
                 <span className="text-sm font-semibold text-slate-700">
-                  ເງິນສົດທີ່ນັບໄດ້ຈິງ
+                  ເງິນກີບຮັບສຸດທິຈາກການຂາຍ (ບໍ່ລວມເງິນເປີດກະ)
                 </span>
-                <MoneyInput
+                <Input
                   name="countedCash"
-                  min={0}
-                  defaultValue={data.closing?.countedCash ?? data.summary.cashAmount}
+                  type="number"
+                  step={1}
+                  required
+                  defaultValue={data.closing?.countedCash ?? data.physicalCashLak}
                 />
+              </label>
+              <label className="space-y-1.5 text-sm font-semibold">ເງິນບາດຮັບຈາກການຂາຍ
+                <Input name="countedThb" type="number" min="0" step="0.01" defaultValue={(data.closing?.countedThb ?? data.cashThb) / 100} required />
               </label>
               <label className="space-y-1.5">
                 <span className="text-sm font-semibold text-slate-700">
@@ -138,6 +148,8 @@ export default async function PosClosingPage({
                   success={data.closing.cashDifference === 0}
                   danger={data.closing.cashDifference !== 0}
                 />
+                <Line label="ເງິນບາດຈິງ" value={formatThb(data.closing.countedThb ?? 0)} />
+                <Line label="ສ່ວນຕ່າງບາດ" value={formatThb(data.closing.differenceThb ?? 0)} success={(data.closing.differenceThb ?? 0) === 0} danger={(data.closing.differenceThb ?? 0) !== 0} />
               </div>
             ) : (
               <p className="text-sm text-slate-500">ຍັງບໍ່ໄດ້ປິດຍອດວັນນີ້</p>

@@ -10,8 +10,41 @@ import {
 import { saveUploadedImage } from "@/lib/object-storage";
 import { requireAuthenticatedUser, requireOwner } from "@/lib/auth";
 import type { StoreSettings } from "@/types";
+import { parseDecimal } from "@/lib/currency";
 
 const hasDatabase = Boolean(process.env.DATABASE_URL);
+
+export async function updateCurrencySettings(_state: { ok: boolean | null; message: string }, formData: FormData) {
+  const owner = await requireOwner();
+  let rates;
+  try {
+    rates = {
+      thbEnabled: formData.get("thbEnabled") === "on",
+      thbPaymentRate: parseDecimal(formData.get("thbPaymentRate") || "0", 4),
+      thbPurchaseRate: parseDecimal(formData.get("thbPurchaseRate") || "0", 4)
+    };
+    if (rates.thbEnabled && !rates.thbPaymentRate) throw new Error("ກະລຸນາກໍານົດເຣດຮັບເງິນບາດກ່ອນເປີດໃຊ້");
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : "ເຣດບໍ່ຖືກຕ້ອງ" };
+  }
+  const audit = {
+    action: "CURRENCY_SETTINGS_UPDATED", entityType: "SETTINGS", entityId: "default",
+    description: "ປ່ຽນເຣດເງິນບາດ", userId: owner.id, userName: owner.name,
+    userRole: owner.role, metadata: rates
+  };
+  if (hasDatabase) {
+    const current = await getStoreSettings();
+    await prisma.$transaction(async tx => {
+      await tx.storeSettingsRecord.upsert({ where: { id: "default" }, update: rates, create: { id: "default", ...current, ...rates } });
+      await tx.auditLog.create({ data: audit });
+    });
+  } else {
+    await updateLocalStore(store => ({ ...store, storeSettings: { ...store.storeSettings, ...rates },
+      auditLogs: [{ ...audit, id: crypto.randomUUID(), createdAt: new Date() }, ...store.auditLogs] }));
+  }
+  for (const path of ["/settings", "/pos", "/products/new", "/inventory"]) revalidatePath(path);
+  return { ok: true, message: "ບັນທຶກເຣດແລ້ວ · ບໍ່ປ່ຽນບິນ ແລະ ຕົ້ນທຶນຍ້ອນຫຼັງ" };
+}
 
 export async function getCategories() {
   await requireAuthenticatedUser();
@@ -368,6 +401,9 @@ function normalizeStoreSettings(settings: {
   defaultRegisterName?: string | null;
   staffMaxDiscountPercent?: number | null;
   requireShiftForSale?: boolean | null;
+  thbEnabled?: boolean | null;
+  thbPaymentRate?: number | null;
+  thbPurchaseRate?: number | null;
 }): StoreSettings {
   return {
     storeName: settings.storeName,
@@ -388,6 +424,9 @@ function normalizeStoreSettings(settings: {
     defaultBranchName: settings.defaultBranchName ?? "",
     defaultRegisterName: settings.defaultRegisterName ?? "",
     staffMaxDiscountPercent: settings.staffMaxDiscountPercent ?? 0,
-    requireShiftForSale: settings.requireShiftForSale ?? false
+    requireShiftForSale: settings.requireShiftForSale ?? false,
+    thbEnabled: settings.thbEnabled ?? false,
+    thbPaymentRate: settings.thbPaymentRate ?? 0,
+    thbPurchaseRate: settings.thbPurchaseRate ?? 0
   };
 }

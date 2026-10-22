@@ -1,4 +1,5 @@
 "use server";
+import { averageCost } from "@/lib/currency";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -680,13 +681,16 @@ function restockProducts(products: Product[], items: OrderItem[], updatedAt: Dat
         .filter((item) => item.variantId === variant.id)
         .reduce((sum, item) => sum + item.quantity, 0);
 
-      return quantity ? { ...variant, stock: variant.stock + quantity } : variant;
+      const returnedCost = orderItems.filter(item => item.variantId === variant.id).reduce((sum, item) => sum + item.cost * item.quantity, 0);
+      return quantity ? { ...variant, stock: variant.stock + quantity,
+        costPrice: averageCost(variant.stock, variant.costPrice, quantity, Math.round(returnedCost / quantity)) } : variant;
     });
 
     return {
       ...product,
       variants,
       stock: variants.reduce((sum, variant) => sum + variant.stock, 0),
+      costPrice: variants[0]?.costPrice ?? product.costPrice,
       updatedAt
     };
   });
@@ -859,7 +863,7 @@ async function restockOrderItemsInDatabase(
 
     const variants = getProductVariants(product).map((variant) =>
       variant.id === item.variantId
-        ? { ...variant, stock: variant.stock + item.quantity }
+        ? { ...variant, stock: variant.stock + item.quantity, costPrice: averageCost(variant.stock, variant.costPrice, item.quantity, item.cost) }
         : variant
     );
 
@@ -867,7 +871,8 @@ async function restockOrderItemsInDatabase(
       where: { id: product.id },
       data: {
         variants,
-        stock: variants.reduce((sum, variant) => sum + variant.stock, 0)
+        stock: variants.reduce((sum, variant) => sum + variant.stock, 0),
+        costPrice: variants[0]?.costPrice ?? product.costPrice
       }
     });
   }

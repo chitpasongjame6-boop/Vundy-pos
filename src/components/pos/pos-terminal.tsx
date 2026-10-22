@@ -1,6 +1,7 @@
 "use client";
+import { formatRate, formatThb, lakToThbDue, parseDecimal, thbToLak } from "@/lib/currency";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { getPosPromotions } from "@/actions/promotion.action";
 import { getPricingKey, getPromotionDiscount, resolvePromotionPrice } from "@/lib/promotions";
@@ -31,6 +32,7 @@ import { Input, Select } from "@/components/ui/input";
 import { MoneyInput } from "@/components/ui/money-input";
 import { EmptyState } from "@/components/ui/patterns";
 import { resolvePublicAssetUrl } from "@/lib/asset-url";
+import { listenForBarcodeScan } from "@/lib/barcode-scanner";
 import {
   formatCurrency,
   formatProductVariantName,
@@ -125,7 +127,8 @@ export function PosTerminal({
   const [selectedMemberId, setSelectedMemberId] = useState("");
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
-  const lastAutoAddedBarcode = useRef("");
+  const [tenderCurrency, setTenderCurrency] = useState<"LAK" | "THB">("LAK");
+  const [receivedThb, setReceivedThb] = useState("");
   const idempotencyKey = useRef(crypto.randomUUID());
   const selectedMember = members.find((member) => member.id === selectedMemberId);
   const matchingMembers = useMemo(() => {
@@ -159,15 +162,27 @@ export function PosTerminal({
   const promotionDiscount = getPromotionDiscount(pricedCart);
   const safeDiscount = promotionDiscount > 0 ? 0 : Math.min(Math.max(0, discount), subtotal);
   const netAmount = subtotal - promotionDiscount - safeDiscount;
+  const payingThb = paymentMethod === "CASH" && tenderCurrency === "THB";
+  const thbRate = storeSettings.thbPaymentRate ?? 0;
+  let receivedLak = receivedAmount;
+  let thbSatang = 0;
+  let validThb = true;
+  if (payingThb) {
+    try { thbSatang = parseDecimal(receivedThb, 2); receivedLak = thbToLak(thbSatang, thbRate); }
+    catch { receivedLak = 0; validThb = false; }
+    validThb = validThb && Boolean(storeSettings.thbEnabled);
+  }
+  let thbDue = 0;
+  try { thbDue = lakToThbDue(netAmount, thbRate); } catch { /* invalid/out-of-range cart is rejected on save */ }
   const changeAmount =
-    paymentMethod === "CASH" ? Math.max(0, receivedAmount - netAmount) : 0;
+    paymentMethod === "CASH" ? Math.max(0, receivedLak - netAmount) : 0;
   const memberDiscountAmount = selectedMember?.tier?.discountPercent
     ? (promotionDiscount > 0 ? 0 : Math.round((subtotal * selectedMember.tier.discountPercent) / 100))
     : 0;
   const splitTotal = splitCash + splitTransfer + splitOther;
   const paymentIsValid =
     paymentMethod === "CASH"
-      ? receivedAmount >= netAmount
+      ? receivedLak >= netAmount && validThb
       : paymentMethod === "SPLIT"
         ? splitTotal === netAmount && splitTotal > 0
         : true;
@@ -214,18 +229,14 @@ export function PosTerminal({
   }
 
   function addByBarcode(value: string) {
+    if (isPending) return;
     const barcode = value.trim().toLowerCase();
 
     if (!barcode) {
       return;
     }
 
-    if (lastAutoAddedBarcode.current === barcode) {
-      lastAutoAddedBarcode.current = "";
-      setScanValue("");
-      return;
-    }
-
+    setScanValue("");
     const matched = options.find((option) => option.sku.toLowerCase() === barcode);
 
     if (!matched) {
@@ -234,25 +245,16 @@ export function PosTerminal({
     }
 
     setSelectedKey(matched.key);
-    setScanValue("");
     addToCart(matched);
   }
 
-  function handleScanChange(value: string) {
-    setScanValue(value);
-
-    const barcode = value.trim().toLowerCase();
-    const matched = options.find((option) => option.sku.toLowerCase() === barcode);
-
-    if (!matched) {
-      return;
-    }
-
-    lastAutoAddedBarcode.current = barcode;
-    setSelectedKey(matched.key);
-    setScanValue("");
-    addToCart(matched);
-  }
+  // Read current stock/promotions without reinstalling the listener on every
+  // pricing clock tick, which could interrupt a scan part-way through its code.
+  const onBarcodeScan = useEffectEvent((barcode: string) => addByBarcode(barcode));
+  useEffect(() => {
+    if (isPending) return;
+    return listenForBarcodeScan((barcode) => onBarcodeScan(barcode));
+  }, [isPending]);
 
   function handleManualSelect(key: string) {
     setSelectedKey(key);
@@ -307,6 +309,9 @@ export function PosTerminal({
         discount: safeDiscount,
         paymentMethod,
         receivedAmount,
+        tenderCurrency: payingThb ? "THB" : "LAK",
+        tenderAmountMinor: payingThb ? thbSatang : undefined,
+        expectedExchangeRate: payingThb ? thbRate : undefined,
         memberId: selectedMemberId,
         paymentReference,
         payments: paymentMethod === "SPLIT" ? [
@@ -327,6 +332,8 @@ export function PosTerminal({
       setCart([]);
       setDiscount(0);
       setReceivedAmount(0);
+      setReceivedThb("");
+      setTenderCurrency("LAK");
       setScanValue("");
       setSelectedKey("");
       setSelectedMemberId("");
@@ -354,6 +361,15 @@ export function PosTerminal({
         </CardHeader>
         <CardContent className="space-y-4">
           {pricingError && <p role="alert" className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">ຍັງອັບເດດໂປຣບໍ່ໄດ້. ລະບົບຈະກວດລາຄາອີກຄັ້ງກ່ອນບັນທຶກບິນ.</p>}
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+            <p role="status" className="text-sm font-bold text-emerald-900">
+              {isPending ? "ພັກການສະແກນ — ກຳລັງບັນທຶກບິນ..." : "ພ້ອມສະແກນ Barcode — ບໍ່ຕ້ອງຄລິກຊ່ອງ"}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-emerald-800">
+              ສະແກນ 1 ຄັ້ງ ເພີ່ມ 1 ຊິ້ນ · ເຄື່ອງສະແກນແບບຄີບອດ ສົ່ງ Enter ຫຼື Tab ທ້າຍລະຫັດ.
+              ຖ້າກຳລັງພິມໃນຊ່ອງອື່ນ ໃຫ້ຄລິກພື້ນທີ່ວ່າງກ່ອນສະແກນ.
+            </p>
+          </div>
           <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
             <label className="space-y-1.5">
               <span className="text-sm font-semibold text-slate-700">
@@ -361,15 +377,21 @@ export function PosTerminal({
               </span>
               <Input
                 value={scanValue}
-                onChange={(event) => handleScanChange(event.target.value)}
+                onChange={(event) => setScanValue(event.target.value)}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter") {
+                  if (event.nativeEvent.isComposing || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
+                  if (event.key === "Enter" || (event.key === "Tab" && event.currentTarget.value.trim())) {
                     event.preventDefault();
-                    addByBarcode(scanValue);
+                    const barcode = event.currentTarget.value;
+                    // Clear immediately so a CR+LF suffix cannot add twice,
+                    // even before React finishes updating this controlled input.
+                    event.currentTarget.value = "";
+                    addByBarcode(barcode);
                   }
                 }}
-                placeholder="ຍິງ Barcode ແລ້ວເພີ່ມອັດຕະໂນມັດ"
+                placeholder="ສະແກນ ຫຼື ພິມ SKU ແລ້ວກົດ Enter"
                 autoComplete="off"
+                disabled={isPending}
               />
             </label>
             <label className="space-y-1.5">
@@ -631,6 +653,21 @@ export function PosTerminal({
             </Select>
           </label>
           {paymentMethod === "CASH" ? (
+            <div className="space-y-3">
+              {storeSettings.thbEnabled || payingThb ? <label className="block space-y-1.5 text-sm font-semibold">ສະກຸນເງິນທີ່ຮັບ
+                <Select value={tenderCurrency} onChange={event => { setTenderCurrency(event.target.value as "LAK" | "THB"); setReceivedAmount(0); setReceivedThb(""); }} disabled={isPending}>
+                  <option value="LAK">ກີບ (LAK)</option><option value="THB">ບາດ (THB) · ທອນເປັນກີບ</option>
+                </Select>
+              </label> : null}
+              {payingThb ? <div className="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50/50 p-3">
+                <p className="text-sm font-bold text-indigo-800">ຕ້ອງຊໍາລະ {formatThb(thbDue)}</p>
+                <p className="text-xs text-slate-600">ເຣດຮ້ານ: 1 ບາດ = {formatRate(thbRate)} ກີບ</p>
+                <label className="block space-y-1.5 text-sm font-semibold">ຮັບເງິນ (ບາດ)
+                  <Input type="number" inputMode="decimal" step="0.01" min="0" value={receivedThb} onChange={event => setReceivedThb(event.target.value)} disabled={isPending} placeholder="0.00" />
+                </label>
+                <p className="text-sm">ມູນຄ່າທຽບກີບ: {formatCurrency(receivedLak)}</p>
+                <p className="text-xs leading-5 text-slate-500">ຕ້ອງເປີດກະກ່ອນຮັບບາດ. ທອນ/ຄືນເງິນເປັນກີບ · ໃບເສັດສະແດງກີບເທົ່ານັ້ນ.</p>
+              </div> : (
             <label className="space-y-1.5">
               <span className="text-sm font-semibold text-slate-700">ຮັບເງິນ</span>
               <MoneyInput
@@ -639,6 +676,8 @@ export function PosTerminal({
                 onValueChange={setReceivedAmount}
               />
             </label>
+              )}
+            </div>
           ) : null}
           {paymentMethod === "TRANSFER" || paymentMethod === "OTHER" ? (
             <label className="space-y-1.5">

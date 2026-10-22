@@ -7,6 +7,8 @@ import { requireAuthenticatedUser } from "@/lib/auth";
 import { verifyOwnerApproval } from "@/lib/approval";
 import { buildReadableNumber } from "@/lib/document-number";
 import type { CashMovement, CashShift, Sale } from "@/types";
+import { expectedDrawerCash, movementBalance } from "@/lib/cash-currency";
+import { parseDecimal } from "@/lib/currency";
 
 const hasDatabase = Boolean(process.env.DATABASE_URL);
 
@@ -30,6 +32,7 @@ export async function getShiftWorkspace() {
             store.cashMovements.filter((movement) => movement.shiftId === current.id)
           )
         : 0,
+      expectedThb: current ? (current.openingThb ?? 0) + movementBalance(store.cashMovements.filter(m => m.shiftId === current.id), "THB") : 0,
       history: store.cashShifts.slice().sort(
         (left, right) => right.openedAt.getTime() - left.openedAt.getTime()
       ).slice(0, 30),
@@ -68,6 +71,7 @@ export async function getShiftWorkspace() {
         )
       : 0,
     history: history as unknown as CashShift[],
+    expectedThb: current ? (current.openingThb ?? 0) + movementBalance(movements as unknown as CashMovement[], "THB") : 0,
     branches,
     registers
   };
@@ -76,6 +80,7 @@ export async function getShiftWorkspace() {
 export async function openCashShift(formData: FormData): Promise<void> {
   const user = await requireAuthenticatedUser();
   const openingCash = parseMoney(formData.get("openingCash"));
+  const openingThb = parseDecimal(formData.get("openingThb") || "0", 2);
   const requestedBranchId = String(formData.get("branchId") ?? "").trim() || null;
   const requestedRegisterId = String(formData.get("registerId") ?? "").trim() || null;
   const now = new Date();
@@ -100,6 +105,7 @@ export async function openCashShift(formData: FormData): Promise<void> {
         cashierName: user.name,
         status: "OPEN",
         openingCash,
+        openingThb,
         openedAt: now,
         createdAt: now,
         updatedAt: now
@@ -117,7 +123,7 @@ export async function openCashShift(formData: FormData): Promise<void> {
           userId: user.id,
           userName: user.name,
           userRole: user.role,
-          metadata: { openingCash },
+          metadata: { openingCash, openingThb },
           createdAt: now
         }, ...store.auditLogs]
       };
@@ -142,7 +148,8 @@ export async function openCashShift(formData: FormData): Promise<void> {
           registerName: register?.name ?? settings?.defaultRegisterName ?? null,
           cashierId: user.id,
           cashierName: user.name,
-          openingCash
+          openingCash,
+          openingThb
         }
       });
       await tx.auditLog.create({
@@ -155,7 +162,7 @@ export async function openCashShift(formData: FormData): Promise<void> {
           userId: user.id,
           userName: user.name,
           userRole: user.role,
-          metadata: { openingCash }
+          metadata: { openingCash, openingThb }
         }
       });
     });
@@ -168,7 +175,8 @@ export async function addCashMovement(formData: FormData): Promise<void> {
   const user = await requireAuthenticatedUser();
   const shiftId = String(formData.get("shiftId") ?? "").trim();
   const type = formData.get("type") === "CASH_OUT" ? "CASH_OUT" : "CASH_IN";
-  const amount = parseMoney(formData.get("amount"));
+  const currency = formData.get("currency") === "THB" ? "THB" : "LAK";
+  const amount = parseDecimal(formData.get("amount") || "0", currency === "THB" ? 2 : 0);
   const reason = String(formData.get("reason") ?? "").trim();
   const note = String(formData.get("note") ?? "").trim() || null;
   if (!shiftId || !amount || !reason) return;
@@ -181,7 +189,7 @@ export async function addCashMovement(formData: FormData): Promise<void> {
       );
       if (!shift) return store;
       const movement: CashMovement = {
-        id: crypto.randomUUID(), shiftId, type, amount, reason, note,
+        id: crypto.randomUUID(), shiftId, type, amount, currency, reason, note,
         userId: user.id, userName: user.name, createdAt: now
       };
       return {
@@ -191,7 +199,7 @@ export async function addCashMovement(formData: FormData): Promise<void> {
           id: crypto.randomUUID(), action: type, entityType: "CASH_SHIFT",
           entityId: shift.id, entityNo: shift.shiftNo,
           description: reason, userId: user.id, userName: user.name,
-          userRole: user.role, metadata: { amount, note }, createdAt: now
+          userRole: user.role, metadata: { amount, currency, note }, createdAt: now
         }, ...store.auditLogs]
       };
     });
@@ -201,14 +209,15 @@ export async function addCashMovement(formData: FormData): Promise<void> {
         where: { id: shiftId, cashierId: user.id, status: "OPEN" }
       });
       if (!shift) return;
+      await tx.cashShift.update({ where: { id: shiftId, status: "OPEN" }, data: { updatedAt: now } });
       await tx.cashMovement.create({
-        data: { shiftId, type, amount, reason, note, userId: user.id, userName: user.name }
+        data: { shiftId, type, amount, currency, reason, note, userId: user.id, userName: user.name }
       });
       await tx.auditLog.create({
         data: {
           action: type, entityType: "CASH_SHIFT", entityId: shift.id,
           entityNo: shift.shiftNo, description: reason, userId: user.id,
-          userName: user.name, userRole: user.role, metadata: { amount, note }
+          userName: user.name, userRole: user.role, metadata: { amount, currency, note }
         }
       });
     });
@@ -221,6 +230,7 @@ export async function closeCashShift(formData: FormData): Promise<void> {
   const user = await requireAuthenticatedUser();
   const shiftId = String(formData.get("shiftId") ?? "").trim();
   const countedCash = parseMoney(formData.get("countedCash"));
+  const countedThb = parseDecimal(formData.get("countedThb") || "0", 2);
   const note = String(formData.get("note") ?? "").trim() || null;
   const approval = verifyOwnerApproval(user, String(formData.get("approvalPin") ?? ""));
   if (!shiftId || !approval) return;
@@ -237,10 +247,12 @@ export async function closeCashShift(formData: FormData): Promise<void> {
         store.sales.filter((sale) => sale.shiftId === shift.id),
         store.cashMovements.filter((movement) => movement.shiftId === shift.id)
       );
+      const expectedThb = (shift.openingThb ?? 0) + movementBalance(store.cashMovements.filter(m => m.shiftId === shift.id), "THB");
       return {
         ...store,
         cashShifts: store.cashShifts.map((item) => item.id === shift.id ? {
           ...item, status: "CLOSED", expectedCash, countedCash,
+          expectedThb, countedThb, differenceThb: countedThb - expectedThb,
           cashDifference: countedCash - expectedCash, note, closedAt: now,
           closedById: user.id, closedByName: user.name, updatedAt: now
         } : item),
@@ -249,7 +261,7 @@ export async function closeCashShift(formData: FormData): Promise<void> {
           entityId: shift.id, entityNo: shift.shiftNo, description: "ປິດກະຂາຍ",
           userId: user.id, userName: user.name, userRole: user.role,
           approvedById: approval.id, approvedByName: approval.name,
-          metadata: { expectedCash, countedCash, difference: countedCash - expectedCash },
+          metadata: { expectedCash, countedCash, difference: countedCash - expectedCash, expectedThb, countedThb, differenceThb: countedThb - expectedThb },
           createdAt: now
         }, ...store.auditLogs]
       };
@@ -267,10 +279,12 @@ export async function closeCashShift(formData: FormData): Promise<void> {
       const expectedCash = calculateExpectedCash(
         shift, sales as unknown as Sale[], movements as unknown as CashMovement[]
       );
+      const expectedThb = (shift.openingThb ?? 0) + movementBalance(movements as unknown as CashMovement[], "THB");
       await tx.cashShift.update({
         where: { id: shiftId },
         data: {
           status: "CLOSED", expectedCash, countedCash,
+          expectedThb, countedThb, differenceThb: countedThb - expectedThb,
           cashDifference: countedCash - expectedCash, note, closedAt: now,
           closedById: user.id, closedByName: user.name
         }
@@ -281,7 +295,7 @@ export async function closeCashShift(formData: FormData): Promise<void> {
           entityNo: shift.shiftNo, description: "ປິດກະຂາຍ", userId: user.id,
           userName: user.name, userRole: user.role, approvedById: approval.id,
           approvedByName: approval.name,
-          metadata: { expectedCash, countedCash, difference: countedCash - expectedCash }
+          metadata: { expectedCash, countedCash, difference: countedCash - expectedCash, expectedThb, countedThb, differenceThb: countedThb - expectedThb }
         }
       });
     });
@@ -291,24 +305,7 @@ export async function closeCashShift(formData: FormData): Promise<void> {
 }
 
 function calculateExpectedCash(shift: CashShift, sales: Sale[], movements: CashMovement[]) {
-  const cashSales = sales
-    .filter((sale) => !sale.status || sale.status === "ACTIVE" || sale.status === "PARTIALLY_RETURNED")
-    .reduce((sum, sale) => {
-      const refund = sale.refundAmount ?? 0;
-      if (sale.paymentMethod === "CASH") return sum + sale.netAmount - refund;
-      if (sale.paymentMethod === "SPLIT") {
-        const cashPaid = (sale.payments ?? [])
-          .filter((payment) => payment.method === "CASH")
-          .reduce((paid, payment) => paid + payment.amount, 0);
-        return sum + Math.max(0, cashPaid - refund);
-      }
-      return sum;
-    }, 0);
-  const movementTotal = movements.reduce(
-    (sum, movement) => sum + (movement.type === "CASH_IN" ? movement.amount : -movement.amount),
-    0
-  );
-  return shift.openingCash + cashSales + movementTotal;
+  return expectedDrawerCash(shift, sales, movements).lak;
 }
 
 function parseMoney(value: FormDataEntryValue | null) {

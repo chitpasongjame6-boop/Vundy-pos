@@ -38,6 +38,16 @@ const referencePromotionSale: Sale = {
 };
 
 describe("shared POS receipt layout", () => {
+  it("prints ONLY kip for baht payments and never reprices a historical reprint", () => {
+    const thbSale: Sale = { ...sale, tenderCurrency: "THB", tenderAmountMinor: 30000, exchangeRate: 6500000,
+      receivedAmount: 195000, changeAmount: 10000 };
+    const html = buildPosReceiptHtml(thbSale, { ...settings, thbEnabled: true, thbPaymentRate: 9000000 }, "");
+    expect(html).toContain("ຮັບຊໍາລະທຽບກີບ");
+    expect(html).toContain("<strong>₭195,000</strong>");
+    expect(html).toContain("<strong>₭10,000</strong>");
+    expect(html).not.toMatch(/฿|THB|ບາດ|6500000|9000000/);
+    expect(html).not.toContain("₭270,000");
+  });
   it("prints original prices and quantity-aware discounts from saved sale snapshots", () => {
     const promotionalSale: Sale = { ...sale, items: [{ ...sale.items[0], name: "Perfume", quantity: 2,
       price: 200000, originalPrice: 250000, promotionId: "old-promo", promotionName: '<New Year & Sale>' },

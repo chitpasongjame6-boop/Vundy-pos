@@ -1,4 +1,5 @@
 "use server";
+import { averageCost, moneyInteger, parsePurchaseCost, type PurchaseCost } from "@/lib/currency";
 
 import { revalidatePath } from "next/cache";
 import type { Prisma } from "@prisma/client";
@@ -149,8 +150,8 @@ export async function createPurchaseOrder(formData: FormData): Promise<void> {
   const user = await requireOwner();
   const supplierId = String(formData.get("supplierId") ?? "").trim();
   const [productId, variantId] = String(formData.get("productVariant") ?? "").split("::");
-  const quantity = parsePositive(formData.get("quantity"));
-  const unitCost = parsePositive(formData.get("unitCost"));
+  const quantity = moneyInteger(Number(formData.get("quantity")));
+  const purchaseCost = parsePurchaseCost(formData.get("purchaseCostCurrency"), formData.get("purchaseCostAmount") ?? formData.get("unitCost") ?? 0, formData.get("purchaseCostRate"));
   if (!supplierId || !productId || !variantId || !quantity) return;
   const now = new Date();
 
@@ -160,12 +161,12 @@ export async function createPurchaseOrder(formData: FormData): Promise<void> {
       const product = store.products.find((item) => item.id === productId);
       const variant = product ? getProductVariants(product).find((item) => item.id === variantId) : null;
       if (!supplier || !product || !variant) return store;
-      const item = buildPurchaseItem(product, variant, quantity, unitCost || variant.costPrice);
+      const item = buildPurchaseItem(product, variant, quantity, purchaseCost);
       const purchase: PurchaseOrder = {
         id: crypto.randomUUID(),
         purchaseNo: buildReadableNumber("PO", now, store.purchaseOrders.length + 1),
         supplierId, supplierName: supplier.name, status: "ORDERED", items: [item],
-        totalCost: item.quantityOrdered * item.unitCost,
+        totalCost: moneyInteger(item.quantityOrdered * item.unitCost),
         note: String(formData.get("note") ?? "").trim() || null,
         orderedAt: now, createdById: user.id, createdByName: user.name,
         createdAt: now, updatedAt: now
@@ -185,12 +186,12 @@ export async function createPurchaseOrder(formData: FormData): Promise<void> {
       const typedProduct = product as unknown as Product | null;
       const variant = typedProduct ? getProductVariants(typedProduct).find((item) => item.id === variantId) : null;
       if (!supplier || !typedProduct || !variant) return;
-      const item = buildPurchaseItem(typedProduct, variant, quantity, unitCost || variant.costPrice);
+      const item = buildPurchaseItem(typedProduct, variant, quantity, purchaseCost);
       const purchaseNo = buildReadableNumber("PO", now, (await tx.purchaseOrder.count()) + 1);
       const purchase = await tx.purchaseOrder.create({
         data: {
           purchaseNo, supplierId, supplierName: supplier.name, status: "ORDERED",
-          items: [item], totalCost: item.quantityOrdered * item.unitCost,
+          items: [item], totalCost: moneyInteger(item.quantityOrdered * item.unitCost),
           note: String(formData.get("note") ?? "").trim() || null,
           orderedAt: now, createdById: user.id, createdByName: user.name
         }
@@ -229,13 +230,14 @@ export async function receivePurchaseOrder(formData: FormData): Promise<void> {
       if (!purchase || purchase.status === "RECEIVED" || purchase.status === "CANCELLED") return;
       for (const line of purchase.items) {
         const product = (await tx.product.findUnique({ where: { id: line.productId } })) as unknown as Product | null;
-        if (!product) continue;
+        if (!product) throw new Error("ບໍ່ພົບສິນຄ້າໃນໃບສັ່ງຊື້");
         const before = getProductVariants(product).find((variant) => variant.id === line.variantId);
-        if (!before) continue;
+        if (!before) throw new Error("ບໍ່ພົບຂະໜາດສິນຄ້າໃນໃບສັ່ງຊື້");
         const received = Math.max(0, line.quantityOrdered - line.quantityReceived);
         if (!received) continue;
         const variants = getProductVariants(product).map((variant) => variant.id === line.variantId ? {
-          ...variant, stock: variant.stock + received, costPrice: line.unitCost
+          ...variant, stock: moneyInteger(variant.stock + received), costPrice: averageCost(variant.stock, variant.costPrice, received, line.unitCost),
+          purchaseCurrency: line.purchaseCurrency ?? "LAK", purchaseAmountMinor: line.purchaseAmountMinor ?? line.unitCost, purchaseRate: line.purchaseRate ?? null
         } : variant);
         await tx.product.update({
           where: { id: product.id },
@@ -249,6 +251,7 @@ export async function receivePurchaseOrder(formData: FormData): Promise<void> {
           productName: line.name, variantName: line.variantName,
           type: "PURCHASE_RECEIPT", quantity: received,
           stockBefore: before.stock, stockAfter: before.stock + received, unitCost: line.unitCost,
+          purchaseCurrency: line.purchaseCurrency, purchaseAmountMinor: line.purchaseAmountMinor, purchaseRate: line.purchaseRate,
           referenceType: "PURCHASE_ORDER", referenceId: purchase.id,
           referenceNo: purchase.purchaseNo, userId: user.id, userName: user.name
         } });
@@ -330,8 +333,8 @@ export async function createRegister(formData: FormData): Promise<void> {
   revalidateInventoryPaths();
 }
 
-function buildPurchaseItem(product: Product, variant: ReturnType<typeof getProductVariants>[number], quantity: number, unitCost: number): PurchaseOrderItem {
-  return { productId: product.id, variantId: variant.id, name: product.name, variantName: variant.name, sku: variant.sku, quantityOrdered: quantity, quantityReceived: 0, unitCost };
+function buildPurchaseItem(product: Product, variant: ReturnType<typeof getProductVariants>[number], quantity: number, cost: PurchaseCost & { costPrice: number }): PurchaseOrderItem {
+  return { productId: product.id, variantId: variant.id, name: product.name, variantName: variant.name, sku: variant.sku, quantityOrdered: quantity, quantityReceived: 0, unitCost: cost.costPrice, purchaseCurrency: cost.purchaseCurrency, purchaseAmountMinor: cost.purchaseAmountMinor, purchaseRate: cost.purchaseRate };
 }
 
 function receiveItemsLocally(products: Product[], purchase: PurchaseOrder, user: { id: string; name: string }, now: Date) {
@@ -341,15 +344,23 @@ function receiveItemsLocally(products: Product[], purchase: PurchaseOrder, user:
     const product = nextProducts.find((item) => item.id === line.productId);
     const variant = product ? getProductVariants(product).find((item) => item.id === line.variantId) : null;
     const received = Math.max(0, line.quantityOrdered - line.quantityReceived);
-    if (!product || !variant || !received) continue;
+    if (!product || !variant) throw new Error("ບໍ່ພົບສິນຄ້າ/ຂະໜາດໃນໃບສັ່ງຊື້");
+    if (!received) continue;
     movements.push({
       id: crypto.randomUUID(), productId: product.id, variantId: variant.id, sku: variant.sku,
       productName: product.name, variantName: variant.name, type: "PURCHASE_RECEIPT",
       quantity: received, stockBefore: variant.stock, stockAfter: variant.stock + received,
       unitCost: line.unitCost, referenceType: "PURCHASE_ORDER", referenceId: purchase.id,
+      purchaseCurrency: line.purchaseCurrency, purchaseAmountMinor: line.purchaseAmountMinor, purchaseRate: line.purchaseRate,
       referenceNo: purchase.purchaseNo, userId: user.id, userName: user.name, createdAt: now
     });
-    nextProducts = nextProducts.map((item) => item.id === product.id ? updateVariantStock(item, variant.id, received, line.unitCost) : item);
+    nextProducts = nextProducts.map((item) => item.id === product.id ? {
+      ...updateVariantStock(item, variant.id, received, averageCost(variant.stock, variant.costPrice, received, line.unitCost)),
+      variants: getProductVariants(item).map(v => v.id === variant.id ? { ...v,
+        stock: moneyInteger(v.stock + received), costPrice: averageCost(v.stock, v.costPrice, received, line.unitCost),
+        purchaseCurrency: line.purchaseCurrency ?? "LAK", purchaseAmountMinor: line.purchaseAmountMinor ?? line.unitCost, purchaseRate: line.purchaseRate ?? null
+      } : v)
+    } : item);
   }
   return { products: nextProducts, movements };
 }

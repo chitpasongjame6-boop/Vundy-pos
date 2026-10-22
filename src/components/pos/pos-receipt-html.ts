@@ -235,7 +235,7 @@ export function buildPosReceiptHtml(
             ${(sale.taxAmount ?? 0) > 0 ? `<div class="line"><span>ລວມອາກອນ ${sale.taxRate ?? 0}%</span><strong>${formatCurrency(sale.taxAmount ?? 0)}</strong></div>` : ""}
             ${
               sale.paymentMethod === "CASH"
-                ? `<div class="line"><span>ຮັບເງິນ</span><strong>${formatCurrency(sale.receivedAmount ?? 0)}</strong></div>
+                ? `<div class="line"><span>${sale.tenderCurrency === "THB" ? "ຮັບຊໍາລະທຽບກີບ" : "ຮັບເງິນ"}</span><strong>${formatCurrency(sale.receivedAmount ?? 0)}</strong></div>
                    <div class="line"><span>ເງິນທອນ</span><strong>${formatCurrency(sale.changeAmount ?? 0)}</strong></div>`
                 : ""
             }

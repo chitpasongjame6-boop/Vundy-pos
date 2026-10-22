@@ -34,7 +34,7 @@ export default async function PosPage() {
       <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
         <MetricCard
           icon={Banknote}
-          label="ເງິນສົດມື້ນີ້"
+          label="ຂາຍເງິນສົດ (ທຽບກີບ)"
           value={formatCurrency(paymentSummary.cashAmount)}
           tone="emerald"
         />
@@ -74,7 +74,10 @@ function hideProductCosts(products: Product[]): Product[] {
     costPrice: 0,
     variants: product.variants?.map((variant) => ({
       ...variant,
-      costPrice: 0
+      costPrice: 0,
+      purchaseCurrency: null,
+      purchaseAmountMinor: null,
+      purchaseRate: null
     }))
   }));
 }
