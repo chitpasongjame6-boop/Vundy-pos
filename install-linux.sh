@@ -22,12 +22,25 @@ usage() {
     'Installs Docker if needed; builds the app; creates an authenticated local' \
     'MongoDB replica set with persistent volumes; starts both on boot.' \
     'Initial install needs internet. Atlas data is NOT automatically migrated.' \
+    'Use bash run.sh to fetch origin/main before installing. This file alone' \
+    'only builds source files already in this folder; it does not update Git.' \
     'Existing .env and Atlas data are untouched. Read docs/setup.md first.'
 }
 
 read_setting() {
   # Read only plain installation settings; do not execute shell code from this file.
   awk -F= -v key="$2" '$1 == key { value=substr($0,index($0,"=")+1); sub(/\r$/, "", value); print value; exit }' "$1"
+}
+
+acquire_install_lock() {
+  local state="$1"
+  [[ ! -L "$state/install.lock" ]] || die 'Local lock must not be a symlink.'
+  # run.sh holds FD 9 through its Git update and passes it into this process.
+  # Reuse only the descriptor for this exact lock file; direct installs open it.
+  if [[ ! /proc/$$/fd/9 -ef "$state/install.lock" ]]; then
+    exec 9>"$state/install.lock"
+  fi
+  flock -n 9 || die 'Another local installation is running.'
 }
 
 print_access_urls() {
@@ -131,10 +144,9 @@ main() {
   [[ -f package-lock.json && -f compose.local.yml && -f Dockerfile ]] || die 'Keep this script with the complete project folder.'
   config="$root/.env.linux.local"
   state="$root/.local-data/linux"
-  [[ ! -L "$root/.local-data" && ! -L "$state" ]] || die 'Local state directories must not be symlinks.'
+  [[ ! -L "$root/.local-data" && ! -L "$state" && ! -L "$state/install.lock" ]] || die 'Local state/lock paths must not be symlinks.'
   mkdir -p -- "$state"
-  exec 9>"$state/install.lock"
-  flock -n 9 || die 'Another local installation is running.'
+  acquire_install_lock "$state"
   sudo -v
   log 'Checking Docker and required tools...'
   sudo apt-get update

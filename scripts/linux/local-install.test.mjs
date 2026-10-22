@@ -36,6 +36,29 @@ function settings(folder) {
 }
 
 describe.skipIf(!hasBash)("local Linux installer configuration", () => {
+  it("reuses the updater's inherited lock descriptor without reopening/truncating it", () => {
+    const folder = fixture();
+    const lock = join(folder, "install.lock");
+    writeFileSync(lock, "inherited lock\n");
+    const result = spawnSync(bash, ["-c",
+      'source "$1"; exec 9<>"$2/install.lock"; flock() { [[ "$1" == -n && "$2" == 9 ]]; }; acquire_install_lock "$2"',
+      "test", installer, folder.replaceAll("\\", "/")
+    ], { encoding: "utf8", timeout: 10000 });
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(lock, "utf8")).toBe("inherited lock\n");
+  });
+
+  it("stops before configuration when the installation lock is busy", () => {
+    const folder = fixture();
+    const result = spawnSync(bash, ["-c",
+      'source "$1"; flock() { return 1; }; acquire_install_lock "$2"',
+      "test", installer, folder.replaceAll("\\", "/")
+    ], { encoding: "utf8", timeout: 10000 });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("Another local installation is running");
+    expect(existsSync(join(folder, ".env.linux.local"))).toBe(false);
+  });
+
   it("has valid Bash syntax and exposes help without installing", () => {
     for (const file of ["run.sh", "install-linux.sh"]) {
       const path = join(root, file).replaceAll("\\", "/");
